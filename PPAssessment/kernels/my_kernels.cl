@@ -1,19 +1,42 @@
-//a simple OpenCL kernel which copies all pixels from A to B
-kernel void identity(global const uchar* A, global uchar* B) {
+kernel void histogramAtomic(global const uchar* inputImage, global int* histogram) {
 	int id = get_global_id(0);
-	B[id] = A[id];
+	int binIndex = inputImage[id];
+	atomic_inc(&histogram[binIndex]);
 }
 
-kernel void filter_r(global const uchar* A, global uchar* B) {
+kernel void scan_hs(global int* inputHistogram, global int* outputHistogram) {
 	int id = get_global_id(0);
-	int image_size = get_global_size(0) / 3; //each image consists of 3 colour channels
-	int colour_channel = id / image_size; // 0 - red, 1 - green, 2 - blue
+	int N = get_global_size(0);
+	global int* temp;
+	for (int stride = 1; stride < N; stride *= 2) {
+		outputHistogram[id] = inputHistogram[id];
+		if (id >= stride)
+		{
+			outputHistogram[id] += inputHistogram[id - stride];
+		}
 
-	// this is just a copy operation, modify to filter out the individual colour channels.
-	if (colour_channel == 0) {
-		B[id] = A[id];
+		barrier(CLK_GLOBAL_MEM_FENCE); //sync the step
+
+		temp = inputHistogram;
+		inputHistogram = outputHistogram;
+		outputHistogram = temp; //swap A & B between steps
 	}
 }
+
+kernel void lut(global const int* inputHistogram, const int maxValue, global int* outputHistogram) {
+	int id = get_global_id(0);
+	//printf("Input Val: \%d, maxValue: \%d, result = \%d\n", inputHistogram[id], maxValue, (double)inputHistogram[id] / maxValue);
+	double normalised = (double)inputHistogram[id] / maxValue;
+	int scaled = normalised * 255;
+	outputHistogram[id] = scaled;
+}
+
+kernel void backprojection(global const uchar* inputImage, global const int* inputHistogram, global uchar* outputImage) {
+	int id = get_global_id(0);
+	outputImage[id] = inputHistogram[inputImage[id]];
+}
+
+
 
 kernel void invert(global const uchar* A, global uchar* B) {
 	int id = get_global_id(0);
