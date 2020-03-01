@@ -5,14 +5,51 @@
 #include "CImg.h"
 
 using namespace cimg_library;
+using namespace std;
 
 void print_help() {
-	std::cerr << "Application usage:" << std::endl;
+	cout << "Application usage:" << endl;
 
-	std::cerr << "  -p : select platform " << std::endl;
-	std::cerr << "  -d : select device" << std::endl;
-	std::cerr << "  -l : list all platforms and devices" << std::endl;
-	std::cerr << "  -h : print this message" << std::endl;
+	cout << "  -p : select platform " << endl;
+	cout << "  -d : select device" << endl;
+	cout << "  -l : list all platforms and devices" << endl;
+	cout << "  -h : print this message" << endl;
+}
+
+vector<int> BuildImageHistogram(const cl::Program &program, const cl::Context &context, const cl::CommandQueue queue, const unsigned int &binSize, const CImg<unsigned char> &image) {
+	const int numberOfBins = ceil(255 / binSize);
+
+	// Initialise a vector for the histogram with the appropriate bin size. Add one because this is capacity not maximum index.
+	vector<int> hist(numberOfBins+1);
+
+	size_t sizeOfHistogram = hist.size() * sizeof(int);
+
+	// Create buffers for the device.
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, image.size());
+	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
+
+	// Copy image data to image buffer on the device and wait for it to finish before continuing.
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, image.size(), &image.data()[0]);
+
+	// Create the kernel to use.
+	cl::Kernel histogramKernel = cl::Kernel(program, "histogramAtomic");
+	// Set kernel arguments.
+	histogramKernel.setArg(0, inputImageBuffer);
+	histogramKernel.setArg(1, histogramBuffer);
+	histogramKernel.setArg(2, binSize);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+	// Queue the kernel for execution on the device.
+	queue.enqueueNDRangeKernel(histogramKernel, cl::NullRange, cl::NDRange(image.size()), cl::NullRange, NULL, &perfEvent);
+
+	// Copy the result from the device to the host.
+	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
+
+	// Print out the performance values.
+	cout << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+
+	return hist;
 }
 
 int main(int argc, char** argv) {
@@ -31,32 +68,27 @@ int main(int argc, char** argv) {
 
 	cimg::exception_mode(0);
 
-	//detect any potential exceptions
+
 	try {
-		CImg<unsigned char> image_input(image_filename.c_str());
-
-		vector<int> hist(256);
-
-		CImgDisplay disp_input(image_input, "input");
-
-		//Part 3 - host operations
-		//3.1 Select computing devices
+		 
+		// Get OpenCL context for the selected platform and device.
 		cl::Context context = GetContext(platform_id, device_id);
 
-		//display the selected device
-		std::cout << "Runing on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << std::endl;
+		// Display the selected device.
+		cout << "Runing on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << endl;
 
-		//create a queue to which we will push commands for the device
+		// Create a queue to which we will push commands for the device
 		cl::CommandQueue queue(context, CL_QUEUE_PROFILING_ENABLE);
 
-		//3.2 Load & build the device code
+		// Load & build the device code.
 		cl::Program::Sources sources;
 
+		// Load the kernels source.
 		AddSources(sources, "kernels/my_kernels.cl");
 
 		cl::Program program(context, sources);
 
-		//build and debug the kernel code
+		// Build and debug the kernel code
 		try {
 			program.build();
 		}
@@ -67,27 +99,14 @@ int main(int argc, char** argv) {
 			throw err;
 		}
 
+		// Read image from file.
+		CImg<unsigned char> image_input(image_filename.c_str());
+
+		// Display input image.
+		CImgDisplay disp_input(image_input, "input");
+
+		vector<int> hist = BuildImageHistogram(program, context, queue, 10, image_input);
 		size_t sizeOfHistogram = hist.size() * sizeof(int);
-
-		//Part 4 - device operations
-		//device - buffers
-		cl::Buffer dev_image_input(context, CL_MEM_READ_ONLY, image_input.size());
-		cl::Buffer histogramInputBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
-		//cl::Buffer dev_image_output(context, CL_MEM_READ_WRITE, image_input.size()); //should be the same as input image
-
-		//4.1 Copy images to device memory
-		queue.enqueueWriteBuffer(dev_image_input, CL_TRUE, 0, image_input.size(), &image_input.data()[0]);
-		//4.2 Setup and execute the kernel (i.e. device code)
-		cl::Kernel histogramKernel = cl::Kernel(program, "histogramAtomic");
-		histogramKernel.setArg(0, dev_image_input);
-		histogramKernel.setArg(1, histogramInputBuffer);
-
-		cl::Event prof_event;
-		queue.enqueueNDRangeKernel(histogramKernel, cl::NullRange, cl::NDRange(image_input.size()), cl::NullRange, NULL, &prof_event);
-
-		//4.3 Copy the result from device to host
-		queue.enqueueReadBuffer(histogramInputBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
-
 
 		//Part 4 - device operations
 		//device - buffers
@@ -101,7 +120,7 @@ int main(int argc, char** argv) {
 		cumulitiveSumKernel.setArg(0, histogramCumulitiveInputBuffer);
 		cumulitiveSumKernel.setArg(1, histogramOutputBuffer);
 
-		queue.enqueueNDRangeKernel(cumulitiveSumKernel, cl::NullRange, cl::NDRange(hist.size()), cl::NullRange, NULL, &prof_event);
+		queue.enqueueNDRangeKernel(cumulitiveSumKernel, cl::NullRange, cl::NDRange(hist.size()), cl::NullRange, NULL);
 
 		//4.3 Copy the result from device to host
 		queue.enqueueReadBuffer(histogramCumulitiveInputBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
@@ -126,7 +145,7 @@ int main(int argc, char** argv) {
 		lutKernel.setArg(1, maxHistValue);
 		lutKernel.setArg(2, histogramLutOutputBuffer);
 
-		queue.enqueueNDRangeKernel(lutKernel, cl::NullRange, cl::NDRange(hist.size()), cl::NullRange, NULL, &prof_event);
+		queue.enqueueNDRangeKernel(lutKernel, cl::NullRange, cl::NDRange(hist.size()), cl::NullRange, NULL);
 
 		//4.3 Copy the result from device to host
 		queue.enqueueReadBuffer(histogramLutOutputBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
@@ -147,7 +166,7 @@ int main(int argc, char** argv) {
 		backPropKernel.setArg(1, backPropInputHist);
 		backPropKernel.setArg(2, backPropOutputImage);
 
-		queue.enqueueNDRangeKernel(backPropKernel, cl::NullRange, cl::NDRange(image_input.size()), cl::NullRange, NULL, &prof_event);
+		queue.enqueueNDRangeKernel(backPropKernel, cl::NullRange, cl::NDRange(image_input.size()), cl::NullRange, NULL);
 
 		vector<unsigned char> output_buffer(image_input.size());
 		//4.3 Copy the result from device to host
@@ -155,10 +174,6 @@ int main(int argc, char** argv) {
 
 		CImg<unsigned char> output_image(output_buffer.data(), image_input.width(), image_input.height(), image_input.depth(), image_input.spectrum());
 		CImgDisplay disp_output(output_image, "output");
-
-		std::cout << "Kernel execution time [ns]:" <<
-			prof_event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - prof_event.getProfilingInfo<CL_PROFILING_COMMAND_START>() <<
-			std::endl;
 
 		while (!disp_input.is_closed() && !disp_output.is_closed()
 			&& !disp_input.is_keyESC() && !disp_output.is_keyESC()) {

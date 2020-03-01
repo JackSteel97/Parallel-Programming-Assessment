@@ -1,6 +1,10 @@
-kernel void histogramAtomic(global const uchar* inputImage, global int* histogram) {
+kernel void histogramAtomic(global const uchar* inputImage, global int* histogram, const int binSize) {
 	int id = get_global_id(0);
-	int binIndex = inputImage[id];
+
+	// Get the bin index, this integer division is always floored toward zero.
+	int binIndex = inputImage[id] / binSize;
+
+	// Atomically increment the value at this bin index.
 	atomic_inc(&histogram[binIndex]);
 }
 
