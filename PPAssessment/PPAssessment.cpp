@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
 	int platform_id = 0;
 	int device_id = 0;
 	string image_filename = "E:/Dev/ParallelAssessment/Images/test.ppm";
-	unsigned int binSize = 10;
+	unsigned int binSize = 1;
 
 	for (int i = 1; i < argc; i++) {
 		if ((strcmp(argv[i], "-p") == 0) && (i < (argc - 1))) { platform_id = atoi(argv[++i]); }
@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
 		cl::Context context = GetContext(platform_id, device_id);
 
 		// Display the selected device.
-		cout << "Runing on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << endl;
+		cout << "Running on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << endl;
 
 		// Create a queue to which we will push commands for the device
 		cl::CommandQueue queue(context, CL_QUEUE_PROFILING_ENABLE);
