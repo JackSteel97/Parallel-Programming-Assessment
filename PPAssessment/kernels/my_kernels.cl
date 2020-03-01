@@ -1,4 +1,4 @@
-kernel void histogramAtomic(global const uchar* inputImage, global int* histogram, const int binSize) {
+kernel void histogramAtomic(global const uchar* inputImage, global uint* histogram, const uint binSize) {
 	int id = get_global_id(0);
 
 	// Get the bin index, this integer division is always floored toward zero.
@@ -8,7 +8,7 @@ kernel void histogramAtomic(global const uchar* inputImage, global int* histogra
 	atomic_inc(&histogram[binIndex]);
 }
 
-kernel void scan_hs(global int* inputHistogram, global int* outputHistogram) {
+kernel void scanHillisSteele(global int* inputHistogram, global int* outputHistogram) {
 	int id = get_global_id(0);
 	int N = get_global_size(0);
 	global int* temp;
@@ -27,7 +27,7 @@ kernel void scan_hs(global int* inputHistogram, global int* outputHistogram) {
 	}
 }
 
-kernel void lut(global const int* inputHistogram, const int maxValue, global int* outputHistogram) {
+kernel void normaliseToLut(global const int* inputHistogram, const int maxValue, global int* outputHistogram) {
 	int id = get_global_id(0);
 	//printf("Input Val: \%d, maxValue: \%d, result = \%d\n", inputHistogram[id], maxValue, (double)inputHistogram[id] / maxValue);
 	double normalised = (double)inputHistogram[id] / maxValue;
@@ -35,9 +35,13 @@ kernel void lut(global const int* inputHistogram, const int maxValue, global int
 	outputHistogram[id] = scaled;
 }
 
-kernel void backprojection(global const uchar* inputImage, global const int* inputHistogram, global uchar* outputImage) {
+kernel void backprojection(global const uchar* inputImage, global const int* inputHistogram, global uchar* outputImage, const uint binSize) {
 	int id = get_global_id(0);
-	outputImage[id] = inputHistogram[inputImage[id]];
+
+	// Get the bin index, this integer division is always floored toward zero.
+	int binIndex = inputImage[id] / binSize;
+
+	outputImage[id] = inputHistogram[binIndex];
 }
 
 
