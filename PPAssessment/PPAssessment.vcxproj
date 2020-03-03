@@ -197,6 +197,9 @@
     <CopyFileToFolders Include="..\Images\test_large.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="..\Images\test_colour.ppm">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
     <None Include="kernels\my_kernels.cl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

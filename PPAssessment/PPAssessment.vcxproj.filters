@@ -20,10 +20,13 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\Images\test.ppm" />
-    <None Include="..\Images\test_large.ppm" />
     <None Include="kernels\my_kernels.cl">
       <Filter>kernels</Filter>
     </None>
+    <None Include="..\Images\test_colour.ppm" />
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="..\Images\test.ppm" />
+    <CopyFileToFolders Include="..\Images\test_large.ppm" />
   </ItemGroup>
 </Project>

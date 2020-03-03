@@ -16,21 +16,28 @@ void print_help() {
 	cout << "  -h : print this message" << endl;
 }
 
-vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::Context &context, const cl::CommandQueue queue, const unsigned int &binSize, const CImg<unsigned char> &image, size_t &sizeOfHistogram) {
+vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::Context &context, const cl::CommandQueue queue, const unsigned int &binSize, const CImg<unsigned char> &image, const unsigned char &colourChannel, size_t &sizeOfHistogram) {
 	const unsigned int numberOfBins = ceil(255 / binSize)+1;
 
 	// Initialise a vector for the histogram with the appropriate bin size. Add one because this is capacity not maximum index.
 	vector<unsigned int> hist(numberOfBins);
 
+	const unsigned int imageSize = image.width() * image.height();
+
+	// Get the selected colour channel data out of the image.
+	CImg<unsigned char>::const_iterator first = image.begin() + (imageSize*colourChannel);
+	CImg<unsigned char>::const_iterator last = image.begin() + (imageSize * colourChannel) + imageSize;
+	vector<unsigned char> imageColourChannelData(first, last);
+
 	// Calculate the size of the histogram in bytes - used for buffer allocation.
 	sizeOfHistogram = hist.size() * sizeof(unsigned int);
 
 	// Create buffers for the device.
-	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, image.size());
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, imageColourChannelData.size());
 	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
 
 	// Copy image data to image buffer on the device and wait for it to finish before continuing.
-	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, image.size(), &image.data()[0]);
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, imageColourChannelData.size(), &imageColourChannelData.data()[0]);
 
 	// Create the kernel to use.
 	cl::Kernel histogramKernel = cl::Kernel(program, "histogramAtomic");
@@ -42,13 +49,13 @@ vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::C
 	// Create  an event for performance tracking.
 	cl::Event perfEvent;
 	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(histogramKernel, cl::NullRange, cl::NDRange(image.size()), cl::NullRange, NULL, &perfEvent);
+	queue.enqueueNDRangeKernel(histogramKernel, cl::NullRange, cl::NDRange(imageColourChannelData.size()), cl::NullRange, NULL, &perfEvent);
 
 	// Copy the result from the device to the host.
 	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
 
 	// Print out the performance values.
-	cout << "Build Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+	cout << "\tBuild Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 
 	return hist;
 }
@@ -79,7 +86,33 @@ void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Conte
 	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
 
 	// Print out the performance values.
-	cout << "Accumulate Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+	cout << "\tAccumulate Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+}
+
+void AccumulateHistogramBlelloch(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram) {
+
+	// Create buffer for the histogram.
+	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
+
+	// Copy the histogram data to the histogram buffer on the device. Wait for it to finish before continuing.
+	queue.enqueueWriteBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
+
+	// Create the kernel for summing.
+	cl::Kernel cumulitiveSumKernel = cl::Kernel(program, "scanBlelloch");
+	// Set kernel arguments.
+	cumulitiveSumKernel.setArg(0, histogramBuffer);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+
+	// Queue the kernel for execution on the device.
+	queue.enqueueNDRangeKernel(cumulitiveSumKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NullRange, NULL, &perfEvent);
+
+	// Copy the result back to the host from the device.
+	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
+
+	// Print out the performance values.
+	cout << "\tAccumulate Histogram (Blelloch): " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 }
 
 void NormaliseToLookupTable(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t &sizeOfHistogram, vector<unsigned int> &histogram) {
@@ -112,18 +145,26 @@ void NormaliseToLookupTable(const cl::Program& program, const cl::Context& conte
 	queue.enqueueReadBuffer(histogramOutputBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
 
 	// Print out the performance values.
-	cout << "Normalise to lookup: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+	cout << "\tNormalise to lookup: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 }
 
-CImg<unsigned char> Backprojection(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned char>& inputImage, const vector<unsigned int> &histogram, const size_t &sizeOfHistogram, const unsigned int &binSize) {
+vector<unsigned char> Backprojection(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned char>& inputImage, const vector<unsigned int> &histogram, const size_t &sizeOfHistogram, const unsigned int &binSize, const unsigned char &colourChannel) {
+
+	const unsigned int imageSize = inputImage.width() * inputImage.height();
+
+	// Get the selected colour channel data out of the image.
+	CImg<unsigned char>::const_iterator first = inputImage.begin() + (imageSize * colourChannel);
+	CImg<unsigned char>::const_iterator last = inputImage.begin() + (imageSize * colourChannel) + imageSize;
+	vector<unsigned char> imageColourChannelData(first, last);
+
 
 	// Create buffers to store the data on the device.
-	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, inputImage.size());
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, imageSize);
 	cl::Buffer inputHistBuffer(context, CL_MEM_READ_ONLY, sizeOfHistogram);
-	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, inputImage.size());
+	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, imageSize);
 
 	// Write the data for the input image and histogram lookup table to the buffers.
-	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, inputImage.size(), &inputImage.data()[0]);
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, imageSize, &imageColourChannelData.data()[0]);
 	queue.enqueueWriteBuffer(inputHistBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
 
 	// Create the kernel
@@ -139,28 +180,25 @@ CImg<unsigned char> Backprojection(const cl::Program& program, const cl::Context
 	cl::Event perfEvent;
 
 	// Execute the kernel on the device.
-	queue.enqueueNDRangeKernel(backPropKernel, cl::NullRange, cl::NDRange(inputImage.size()), cl::NullRange, NULL, &perfEvent);
+	queue.enqueueNDRangeKernel(backPropKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
 
 	// Create the vector to store the output data.
-	vector<unsigned char> outputData(inputImage.size());
+	vector<unsigned char> outputData(imageSize);
 
 	// Copy the output from the device buffer to the output vector on the host.
 	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, outputData.size(), &outputData.data()[0]);
 
-	// Create the image from the output data.
-	CImg<unsigned char> outputImage(outputData.data(), inputImage.width(), inputImage.height(), inputImage.depth(), inputImage.spectrum());
-
 	// Print out the performance values.
-	cout << "Backprojection: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+	cout << "\tBackprojection: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 
-	return outputImage;
+	return outputData;
 }
 
 int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
 	int platform_id = 0;
 	int device_id = 0;
-	string image_filename = "E:/Dev/ParallelAssessment/Images/test.ppm";
+	string image_filename = "E:/Dev/ParallelAssessment/Images/test_large.ppm";
 	unsigned int binSize = 1;
 
 	for (int i = 1; i < argc; i++) {
@@ -211,16 +249,35 @@ int main(int argc, char** argv) {
 
 		size_t sizeOfHistogram;
 
-		// Build a histogram from the input image and get its size out.
-		vector<unsigned int> hist = BuildImageHistogram(program, context, queue, binSize, inputImage, sizeOfHistogram);
-	
-		// Run cumulative sum on the histogram.
-		AccumulateHistogramHillisSteele(program, context, queue, sizeOfHistogram, hist);
+		// Work out the image size of a single channel.
+		const unsigned int imageSize = inputImage.width() * inputImage.height();
 
-		// Normalise and create a lookup table from the cumulative histogram.
-		NormaliseToLookupTable(program, context, queue, sizeOfHistogram, hist);
+		// Allocate a vector to store all channels of the output image.
+		vector<unsigned char> outputImageData(inputImage.size());
 
-		CImg<unsigned char> outputImage = Backprojection(program, context, queue, inputImage, hist, sizeOfHistogram, binSize);
+		for (unsigned char colourChannel = 0; colourChannel < inputImage.spectrum(); colourChannel++) {
+			cout << endl << "Processing Colour Channel " << (int)colourChannel << endl << endl;
+
+			// Build a histogram from the input image and get its size out.
+			vector<unsigned int> hist = BuildImageHistogram(program, context, queue, binSize, inputImage, colourChannel, sizeOfHistogram);
+		
+			// Run cumulative sum on the histogram.
+			AccumulateHistogramBlelloch(program, context, queue, sizeOfHistogram, hist);
+		
+			// Normalise and create a lookup table from the cumulative histogram.
+			NormaliseToLookupTable(program, context, queue, sizeOfHistogram, hist);
+
+			// Backproject with the cumulative histogram.
+			vector<unsigned char> outputData = Backprojection(program, context, queue, inputImage, hist, sizeOfHistogram, binSize, colourChannel);
+
+			// Copy the channel to the output image data vector in the appropriate channel position.
+			std::copy(outputData.begin(), outputData.end(), outputImageData.begin() + (imageSize * colourChannel));
+		}
+
+		// Create the image from the output data.
+		CImg<unsigned char> outputImage(outputImageData.data(), inputImage.width(), inputImage.height(), inputImage.depth(), inputImage.spectrum());
+
+		
 		CImgDisplay displayOutput(outputImage, "output");
 
 		while (!displayInput.is_closed() && !displayOutput.is_closed()
