@@ -1,17 +1,16 @@
-kernel void histogramAtomic(global const uchar* inputImage, global uint* histogram, const uint binSize) {
+kernel void histogramAtomic(global const ushort* inputImage, global uint* histogram, const uint binSize) {
 	int id = get_global_id(0);
 
 	// Get the bin index, this integer division is always floored toward zero.
-	int binIndex = inputImage[id] / binSize;
-
+	uint binIndex = inputImage[id] / binSize;	
 	// Atomically increment the value at this bin index.
 	atomic_inc(&histogram[binIndex]);
 }
 
-kernel void scanHillisSteele(global int* inputHistogram, global int* outputHistogram) {
+kernel void scanHillisSteele(global uint* inputHistogram, global uint* outputHistogram) {
 	int id = get_global_id(0);
 	int N = get_global_size(0);
-	global int* temp;
+	global uint* temp;
 	for (int stride = 1; stride < N; stride *= 2) {
 		outputHistogram[id] = inputHistogram[id];
 		if (id >= stride)
@@ -29,21 +28,21 @@ kernel void scanHillisSteele(global int* inputHistogram, global int* outputHisto
 	}
 }
 
-kernel void normaliseToLut(global const int* inputHistogram, const int maxValue, global int* outputHistogram) {
+kernel void normaliseToLut(global const uint* inputHistogram, const uint maxValue, global uint* outputHistogram, const ushort maxPixelValue) {
 	int id = get_global_id(0);
 
 	// Calculate the normalised value between 0 and 1. We cast to a double to avoid integer rounding occurring.
 	double normalised = (double)inputHistogram[id] / maxValue;
 	// Scale the normalised value back up to the scale of unsigned char.
-	int scaled = normalised * 255;
+	uint scaled = normalised * maxPixelValue;
 	outputHistogram[id] = scaled;
 }
 
-kernel void backprojection(global const uchar* inputImage, global const int* inputHistogram, global uchar* outputImage, const uint binSize) {
+kernel void backprojection(global const ushort* inputImage, global const uint* inputHistogram, global ushort* outputImage, const uint binSize) {
 	int id = get_global_id(0);
 
 	// Get the bin index, this integer division is always floored toward zero.
-	int binIndex = inputImage[id] / binSize;
+	uint binIndex = inputImage[id] / binSize;
 
 	outputImage[id] = inputHistogram[binIndex];
 }
@@ -80,11 +79,11 @@ kernel void scanBlelloch(global int* A) {
 
 //a double-buffered version of the Hillis-Steele inclusive scan
 //requires two additional input arguments which correspond to two local buffers
-kernel void scan_add(__global const int* A, global int* B, local int* scratch_1, local int* scratch_2) {
+kernel void scan_add(__global const uint* A, global uint* B, local uint* scratch_1, local uint* scratch_2) {
 	int id = get_global_id(0);
 	int lid = get_local_id(0);
 	int N = get_local_size(0);
-	local int* scratch_3;//used for buffer swap
+	local uint* scratch_3;//used for buffer swap
 
 	//cache all N values from global memory to local memory
 	scratch_1[lid] = A[id];
