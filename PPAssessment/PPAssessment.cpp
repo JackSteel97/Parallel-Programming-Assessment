@@ -63,6 +63,71 @@ vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::C
 	return hist;
 }
 
+vector<unsigned int> CumulativeSumParallel(const cl::Program& program, const cl::Context& context, const cl::CommandQueue& queue, const unsigned int deviceId, vector<unsigned int> input) {
+	const size_t outputCount = input.size();
+	const size_t outputSize = outputCount * sizeof(unsigned int);
+
+	cl::Kernel phase1Kernel = cl::Kernel(program, "scanHillisSteeleBuffered");
+
+	cl::Device device = context.getInfo<CL_CONTEXT_DEVICES>()[deviceId];
+
+	const size_t localSize = phase1Kernel.getWorkGroupInfo<CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE>(device);
+	const size_t localSizeBytes = localSize * sizeof(unsigned int);
+
+	const size_t paddingSize = input.size() % localSize;
+
+	if (paddingSize > 0) {
+		const vector<unsigned int> paddingVector(localSize - paddingSize, 0);
+		input.insert(input.end(), paddingVector.begin(), paddingVector.end());
+	}
+
+	const size_t inputCount = input.size();
+	const size_t inputSize = input.size() * sizeof(unsigned int);
+	const size_t numberOfGroups = inputCount / localSize;
+	const size_t numberOfGroupsBytes = numberOfGroups * sizeof(unsigned int);
+
+	cl::Buffer inputBuffer(context, CL_MEM_READ_ONLY, inputSize);
+	cl::Buffer outputBuffer(context, CL_MEM_READ_WRITE, outputSize);
+
+	queue.enqueueWriteBuffer(inputBuffer, CL_TRUE, 0, inputSize, &input[0]);
+	queue.enqueueFillBuffer(outputBuffer, 0, 0, outputSize);
+
+	phase1Kernel.setArg(0, inputBuffer);
+	phase1Kernel.setArg(1, outputBuffer);
+	phase1Kernel.setArg(2, cl::Local(localSizeBytes));
+	phase1Kernel.setArg(3, cl::Local(localSizeBytes));
+
+	queue.enqueueNDRangeKernel(phase1Kernel, cl::NullRange, cl::NDRange(inputCount), cl::NDRange(localSize));
+
+	cl::Kernel phase2Kernel = cl::Kernel(program, "blockSum");
+
+	cl::Buffer phase2OutputBuffer(context, CL_MEM_READ_WRITE, numberOfGroupsBytes);
+
+	phase2Kernel.setArg(0, outputBuffer);
+	phase2Kernel.setArg(1, phase2OutputBuffer);
+	phase2Kernel.setArg(2, static_cast<int>(localSize));
+
+	queue.enqueueNDRangeKernel(phase2Kernel, cl::NullRange, cl::NDRange(numberOfGroups), cl::NullRange);
+
+	cl::Kernel phase25Kernel = cl::Kernel(program, "scanHillisSteele");
+
+	phase25Kernel.setArg(0, phase2OutputBuffer);
+	queue.enqueueNDRangeKernel(phase25Kernel, cl::NullRange, cl::NDRange(numberOfGroups), cl::NullRange);
+
+	cl::Kernel phase3Kernel = cl::Kernel(program, "scanAddAdjust");
+
+	phase3Kernel.setArg(0, outputBuffer);
+	phase3Kernel.setArg(1, phase2OutputBuffer);
+
+	queue.enqueueNDRangeKernel(phase3Kernel, cl::NDRange(localSize), cl::NDRange(inputCount-localSize), cl::NDRange(localSize));
+
+	vector<unsigned int> outputData(outputCount);
+	queue.enqueueReadBuffer(outputBuffer, CL_TRUE, 0, outputSize, &outputData[0]);
+
+	return outputData;
+}
+
+
 void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t &sizeOfHistogram, vector<unsigned int> &histogram, double &totalDurationMs) {
 
 	// Create buffer for the histogram.
@@ -83,7 +148,7 @@ void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Conte
 	cl::Event perfEvent;
 
 	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(cumulativeSumKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NullRange, NULL, &perfEvent);
+	queue.enqueueNDRangeKernel(cumulativeSumKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NDRange(256), NULL, &perfEvent);
 
 	// Copy the result back to the host from the device.
 	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
@@ -226,7 +291,9 @@ CImg<unsigned short> ParallelImplementation(const cl::Program& program, const cl
 		vector<unsigned int> hist = BuildImageHistogram(program, context, queue, binSize, imageColourChannelData, colourChannel, sizeOfHistogram, totalDurationMs, maxPixelValue, sizeOfImageChannel);
 
 		// Run cumulative sum on the histogram.
-		AccumulateHistogramHillisSteele(program, context, queue, sizeOfHistogram, hist, totalDurationMs);
+		hist = CumulativeSumParallel(program, context, queue, 0, hist);
+
+		//AccumulateHistogramHillisSteele(program, context, queue, sizeOfHistogram, hist, totalDurationMs);
 
 		// Normalise and create a lookup table from the cumulative histogram.
 		NormaliseToLookupTable(program, context, queue, sizeOfHistogram, hist, totalDurationMs, maxPixelValue);
@@ -312,12 +379,13 @@ CImg<unsigned short> SerialImplementation(const CImg<unsigned short>& inputImage
 	return outputImageSerial;
 }
 
+
 int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
 	int platform_id = 0;
 	int device_id = 0;
 	string image_filename = "E:/Dev/Parallel-Programming-Assessment/Images/test_colour_16_small.ppm";
-	unsigned int binSize = 256;
+	unsigned int binSize = 1;
 	unsigned short maxPixelValue = 65535;
 
 	for (int i = 1; i < argc; i++) {
@@ -359,6 +427,8 @@ int main(int argc, char** argv) {
 			std::cout << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
 			throw err;
 		}
+
+		//CumulativeSumParallel(program, context, queue, device_id);
 		
 		double totalDurationSerial, totalDurationParallel;
 
