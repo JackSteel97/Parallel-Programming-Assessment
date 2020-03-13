@@ -18,12 +18,20 @@
     <ClInclude Include="..\include\CImg.h">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="ParallelHslProcessor.h" />
+    <ClInclude Include="SharedParallel.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="kernels\my_kernels.cl">
       <Filter>kernels</Filter>
     </None>
     <None Include="..\Images\test_colour_16_small.ppm" />
+    <None Include="HslKernels.cl">
+      <Filter>kernels</Filter>
+    </None>
+    <None Include="SharedKernels.cl">
+      <Filter>kernels</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\Images\test.ppm" />

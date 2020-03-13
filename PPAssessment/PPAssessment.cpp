@@ -5,6 +5,9 @@
 #include "CImg.h"
 #include <chrono>  // for high_resolution_clock
 
+#include "ParallelHslProcessor.h";
+#include "SharedParallel.h";
+
 using namespace cimg_library;
 using namespace std;
 using namespace chrono;
@@ -18,84 +21,8 @@ void print_help() {
 	cout << "  -h : print this message" << endl;
 }
 
-double GetProfilingTotalTimeMs(const cl::Event& evnt) {
-	return (evnt.getProfilingInfo<CL_PROFILING_COMMAND_END>() - evnt.getProfilingInfo<CL_PROFILING_COMMAND_QUEUED>()) / static_cast<double>(ProfilingResolution::PROF_MS);
-}
 
-vector<float> ConvertRgbToHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short>&inputImage, double& totalDurationMs, const unsigned int &imageSize, const unsigned short &maxPixelValue) {
-	
-	const unsigned int sizeOfImage = inputImage.size() * sizeof(unsigned short);
-	const unsigned int sizeOfOutput = inputImage.size() * sizeof(float);
-	
-	
-	// Create buffers for the device.
-	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
-	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, sizeOfOutput);
 
-	// Copy image data to image buffer on the device and wait for it to finish before continuing.
-	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[0]);
-
-	// Create the kernel to use.
-	cl::Kernel conversionKernel = cl::Kernel(program, "RgbToHsl");
-	// Set kernel arguments.
-	conversionKernel.setArg(0, inputImageBuffer);
-	conversionKernel.setArg(1, outputImageBuffer);
-	conversionKernel.setArg(2, maxPixelValue);
-	conversionKernel.setArg(3, imageSize);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(conversionKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
-
-	vector<float> outputData(inputImage.size());
-	// Copy the result from the device to the host.
-	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, sizeOfOutput, &outputData.data()[0]);
-
-	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
-
-	// Print out the performance values.
-	cout << "\tConvert RGB to HSL: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-
-	return outputData;
-}
-
-vector<unsigned short> ConvertHslToRgb(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const vector<float>& inputImage, double& totalDurationMs, const unsigned int &imageSize, const unsigned short maxPixelValue) {
-
-	const unsigned int sizeOfImage = inputImage.size() * sizeof(float);
-	const unsigned int sizeOfOutput = inputImage.size() * sizeof(unsigned short);
-
-	// Create buffers for the device.
-	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
-	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, sizeOfOutput);
-
-	// Copy image data to image buffer on the device and wait for it to finish before continuing.
-	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[0]);
-
-	// Create the kernel to use.
-	cl::Kernel conversionKernel = cl::Kernel(program, "HslToRgb");
-	// Set kernel arguments.
-	conversionKernel.setArg(0, inputImageBuffer);
-	conversionKernel.setArg(1, outputImageBuffer);
-	conversionKernel.setArg(2, maxPixelValue);
-	conversionKernel.setArg(3, imageSize);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(conversionKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
-
-	vector<unsigned short> outputData(inputImage.size());
-	// Copy the result from the device to the host.
-	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, sizeOfOutput, &outputData.data()[0]);
-
-	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
-
-	// Print out the performance values.
-	cout << "\tConvert HSL to RGB: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-
-	return outputData;
-}
 
 
 vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::Context &context, const cl::CommandQueue queue, const unsigned int &binSize, const vector<unsigned short> &imageColourChannelData, const unsigned char &colourChannel, size_t &sizeOfHistogram, double &totalDurationMs, const unsigned short &maxPixelValue, const size_t &sizeOfImageChannel) {
@@ -139,175 +66,9 @@ vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::C
 	return hist;
 }
 
-vector<unsigned int> BuildImageHistogramHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const unsigned int& binSize, const vector<float> &inputImage, size_t& sizeOfHistogram, double& totalDurationMs, const unsigned short& maxPixelValue, const unsigned int imageSize) {
-	// Calculate the number of bins needed.
-	const unsigned int numberOfBins = ceil(99 / binSize) + 1;
 
-	// Initialise a vector for the histogram with the appropriate bin size. Add one because this is capacity not maximum index.
-	vector<unsigned int> hist(numberOfBins);
 
-	// Calculate the size of the histogram in bytes - used for buffer allocation.
-	sizeOfHistogram = hist.size() * sizeof(unsigned int);
-	const unsigned int sizeOfImage = imageSize * sizeof(float);
 
-	// Create buffers for the device.
-	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
-	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
-
-	// Copy image data for the luminance channel to image buffer on the device and wait for it to finish before continuing.
-	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[(imageSize*2)-1]);
-
-	// Create the kernel to use.
-	cl::Kernel histogramKernel = cl::Kernel(program, "histogramAtomicHsl");
-	// Set kernel arguments.
-	histogramKernel.setArg(0, inputImageBuffer);
-	histogramKernel.setArg(1, histogramBuffer);
-	histogramKernel.setArg(2, binSize);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-	// Queue the kernel for execution on the device. Only run through one channel - the luminance channel.
-	queue.enqueueNDRangeKernel(histogramKernel, 0, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
-
-	// Copy the result from the device to the host.
-	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
-
-	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
-
-	// Print out the performance values.
-	cout << "\tBuild Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-
-	return hist;
-}
-
-vector<unsigned int> CumulativeSumParallel(const cl::Program& program, const cl::Context& context, const cl::CommandQueue& queue, const unsigned int deviceId, vector<unsigned int> input, double &totalDurationMs) {
-	// Save the size and count of the input for use with the output later. We need to do this first before any padding is added to the input.
-	const size_t outputCount = input.size();
-	const size_t outputSize = outputCount * sizeof(unsigned int);
-
-	cout << "\tTwo-Stage Scan for Large Arrays:" << endl;
-
-	// Create the kernel for the double buffered scan.
-	cl::Kernel phase1Kernel = cl::Kernel(program, "scanHillisSteeleBuffered");
-
-	// Get the device so we can extract info about it.
-	const cl::Device device = context.getInfo<CL_CONTEXT_DEVICES>()[deviceId];
-
-	// Get the preferred local size.
-	const size_t localSize = phase1Kernel.getWorkGroupInfo<CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE>(device);
-	// Calculate how many bytes this is.
-	const size_t localSizeBytes = localSize * sizeof(unsigned int);
-
-	// Work out if we need any padding.
-	const size_t paddingSize = input.size() % localSize;
-
-	// Do we need padding?
-	if (paddingSize > 0) {
-		// Yes, add the appropriate number of zeros as padding. Zeros are used because they don't affect the sum.
-		const vector<unsigned int> paddingVector(localSize - paddingSize, 0);
-		input.insert(input.end(), paddingVector.begin(), paddingVector.end());
-	}
-
-	// How many elements do we have now?
-	const size_t inputCount = input.size();
-
-	// What's the memory footprint of the input?
-	const size_t inputSize = input.size() * sizeof(unsigned int);
-
-	// How many work groups need to run?
-	const size_t numberOfGroups = inputCount / localSize;
-
-	// What's the memory footprint of this many work groups?
-	const size_t numberOfGroupsBytes = numberOfGroups * sizeof(unsigned int);
-
-	// Create a buffer to store the input data.
-	const cl::Buffer inputBuffer(context, CL_MEM_READ_ONLY, inputSize);
-
-	// Create a buffer to store the output data.
-	const cl::Buffer outputBuffer(context, CL_MEM_READ_WRITE, outputSize);
-
-	// Write the input data to the device.
-	queue.enqueueWriteBuffer(inputBuffer, CL_TRUE, 0, inputSize, &input[0]);
-	// Fill the output buffer with zeros on the device.
-	queue.enqueueFillBuffer(outputBuffer, 0, 0, outputSize);
-
-	// Set arguments for the scan kernel.
-	phase1Kernel.setArg(0, inputBuffer);
-	phase1Kernel.setArg(1, outputBuffer);
-	phase1Kernel.setArg(2, cl::Local(localSizeBytes));
-	phase1Kernel.setArg(3, cl::Local(localSizeBytes));
-
-	// Create  an event for performance tracking.
-	cl::Event perfEventPhase1;
-
-	// Run the double buffered scan kernel. Keep the result on device for now so we can re-use the buffer.
-	queue.enqueueNDRangeKernel(phase1Kernel, cl::NullRange, cl::NDRange(inputCount), cl::NDRange(localSize), NULL, &perfEventPhase1);	
-
-	// Create the block sum kernel for phase 2.
-	cl::Kernel phase2Kernel = cl::Kernel(program, "blockSum");
-
-	// Create a separate output buffer that will store the block sum result.
-	// This buffer needs to be the same size as the number of groups.
-	const cl::Buffer phase2OutputBuffer(context, CL_MEM_READ_WRITE, numberOfGroupsBytes);
-
-	// Set the arguments for the block sum kernel.
-	phase2Kernel.setArg(0, outputBuffer);
-	phase2Kernel.setArg(1, phase2OutputBuffer);
-	// The kernel needs to know the local size of the previous scan kernel - cast it to an int because size_t is not compatible with the kernel code.
-	phase2Kernel.setArg(2, static_cast<int>(localSize));
-
-	// Create  an event for performance tracking.
-	cl::Event perfEventPhase2;
-
-	// Run the block sum kernel.
-	queue.enqueueNDRangeKernel(phase2Kernel, cl::NullRange, cl::NDRange(numberOfGroups), cl::NullRange, NULL, &perfEventPhase2);	
-
-	// Create the kernel for the scan on the block sums.
-	// We use standard Hillis-Steele here because it is approximately twice as fast as a serial scan with atomics (5us vs 10us).
-	// Although Hillis-Steele is an inclusive scan we can immitate an exclusive scan by skipping the first and last items later when we run the scanAddAdjust kernel.
-	cl::Kernel phase2ScanKernel = cl::Kernel(program, "scanHillisSteele");
-
-	// Set the arguments for the block scan.
-	phase2ScanKernel.setArg(0, phase2OutputBuffer);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEventPhase2Scan;
-
-	// Run the block scan kernel.
-	queue.enqueueNDRangeKernel(phase2ScanKernel, cl::NullRange, cl::NDRange(numberOfGroups), cl::NullRange, NULL, &perfEventPhase2Scan);
-
-	// Create a kernel for adjusting the original partial scan with the new block scan result.
-	cl::Kernel phase3Kernel = cl::Kernel(program, "scanAddAdjust");
-
-	// Input the original partial scan result.
-	phase3Kernel.setArg(0, outputBuffer);
-	// Input the block scan result.
-	phase3Kernel.setArg(1, phase2OutputBuffer);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEventPhase3;
-
-	// Run the scan add kernel.
-	queue.enqueueNDRangeKernel(phase3Kernel, cl::NDRange(localSize), cl::NDRange(inputCount-localSize), cl::NDRange(localSize), NULL, &perfEventPhase3);
-
-	// Create an output vector of the right size.
-	vector<unsigned int> outputData(outputCount);
-
-	// Copy the contents of the output buffer on the device to the vector on the host.
-	queue.enqueueReadBuffer(outputBuffer, CL_TRUE, 0, outputSize, &outputData[0]);
-
-	// Print out the performance values.
-	cout << "\t\tDouble Buffered Hillis-Steele Scan: " << GetFullProfilingInfo(perfEventPhase1, ProfilingResolution::PROF_US) << endl;
-	cout << "\t\tBlock Sum: " << GetFullProfilingInfo(perfEventPhase2, ProfilingResolution::PROF_US) << endl;
-	cout << "\t\tBlock Scan: " << GetFullProfilingInfo(perfEventPhase2Scan, ProfilingResolution::PROF_US) << endl;
-	cout << "\t\tScan Add: " << GetFullProfilingInfo(perfEventPhase3, ProfilingResolution::PROF_US) << endl;
-	totalDurationMs += GetProfilingTotalTimeMs(perfEventPhase1);
-	totalDurationMs += GetProfilingTotalTimeMs(perfEventPhase2);
-	totalDurationMs += GetProfilingTotalTimeMs(perfEventPhase2Scan);
-	totalDurationMs += GetProfilingTotalTimeMs(perfEventPhase3);
-
-	return outputData;
-}
 
 
 void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t &sizeOfHistogram, vector<unsigned int> &histogram, double &totalDurationMs) {
@@ -405,94 +166,9 @@ void NormaliseToLookupTable(const cl::Program& program, const cl::Context& conte
 	cout << "\tNormalise to lookup: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 }
 
-vector<float> NormaliseToLookupTableHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram, double& totalDurationMs) {
 
-	// Create buffers for the histogram.
-	cl::Buffer histogramInputBuffer(context, CL_MEM_READ_ONLY, sizeOfHistogram);
-	cl::Buffer histogramOutputBuffer(context, CL_MEM_READ_WRITE, histogram.size() * sizeof(float));
 
-	// Get the maximum value from the histogram. Because it is cumulative, it is just the last value.
-	const unsigned int maxHistValue = histogram[histogram.size() - 1];
 
-	// Copy histogram data to device buffer memory.
-	queue.enqueueWriteBuffer(histogramInputBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
-
-	// Create the kernel.
-	cl::Kernel lutKernel = cl::Kernel(program, "normaliseToLutHsl");
-
-	// Set the kernel arguments.
-	lutKernel.setArg(0, histogramInputBuffer);
-	lutKernel.setArg(1, maxHistValue);
-	lutKernel.setArg(2, histogramOutputBuffer);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-
-	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(lutKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NullRange, NULL, &perfEvent);
-
-	vector<float> outputLut(histogram.size());
-	// Copy the result from the output buffer on the device to the host.
-	queue.enqueueReadBuffer(histogramOutputBuffer, CL_TRUE, 0, histogram.size()*sizeof(float), &outputLut.data()[0]);
-
-	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
-
-	// Print out the performance values.
-	cout << "\tNormalise to lookup: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-
-	return outputLut;
-}
-
-vector<float> BackprojectionHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const vector<float>& inputImage, const vector<float>& histogram, size_t& sizeOfHistogram, const unsigned int& binSize, const unsigned int &imageSize, double& totalDurationMs) {
-
-	sizeOfHistogram = sizeof(float) * histogram.size();
-	const unsigned int sizeOfImage = imageSize * sizeof(float);
-
-	// Create buffers to store the data on the device.
-	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
-	cl::Buffer inputHistBuffer(context, CL_MEM_READ_ONLY, sizeOfHistogram);
-	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, sizeOfImage);
-
-	// Write the data for the input image and histogram lookup table to the buffers.
-	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[(imageSize*2)-1]);
-	queue.enqueueWriteBuffer(inputHistBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
-
-	// Create the kernel
-	cl::Kernel backPropKernel = cl::Kernel(program, "backprojectionHsl");
-
-	// Set the kernel arguments.
-	backPropKernel.setArg(0, inputImageBuffer);
-	backPropKernel.setArg(1, inputHistBuffer);
-	backPropKernel.setArg(2, outputImageBuffer);
-	backPropKernel.setArg(3, binSize);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-
-	// Execute the kernel on the device.
-	queue.enqueueNDRangeKernel(backPropKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
-
-	// Create the vector to store the output data.
-	vector<float> outputData(imageSize);
-
-	// Copy the output from the device buffer to the output vector on the host.
-	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, sizeOfImage, &outputData.data()[0]);
-
-	// Create an output image data with the hue and saturation channels from the input.
-	vector<float>::const_iterator first = inputImage.begin();
-	vector<float>::const_iterator last = inputImage.begin() + (imageSize * 2);
-	vector<float> outputImageData(first, last);
-
-	// Append new luminance channel.
-	outputImageData.insert(outputImageData.end(), outputData.begin(), outputData.end());
-
-	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
-
-	// Print out the performance values.
-	cout << "\tBackprojection: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-
-	return outputImageData;
-}
 
 vector<unsigned short> Backprojection(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const vector<unsigned short>& imageColourChannelData, const vector<unsigned int> &histogram, const size_t &sizeOfHistogram, const unsigned int &binSize, const unsigned char &colourChannel, double &totalDurationMs, const size_t sizeOfImageChannel) {
 
@@ -534,36 +210,6 @@ vector<unsigned short> Backprojection(const cl::Program& program, const cl::Cont
 	return outputData;
 }
 
-CImg<unsigned short> ParallelCorrectColours(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short>& inputImage, const unsigned int& binSize, double& totalDurationMs, const unsigned int &imageSize, const unsigned short& maxPixelValue, const unsigned char& deviceId) {
-
-	cout << endl << "Running parallel with correct colour equalisation..." << endl;
-
-	// Convert to HSL.
-	vector<float> hslImg = ConvertRgbToHsl(program, context, queue, inputImage, totalDurationMs, imageSize, maxPixelValue);
-	
-	size_t sizeOfHistogram;
-	// Build Histogram.
-	vector<unsigned int> hist = BuildImageHistogramHsl(program, context, queue, binSize, hslImg, sizeOfHistogram, totalDurationMs, maxPixelValue, imageSize);
-
-	// Cumulative sum the histogram.
-	hist = CumulativeSumParallel(program, context, queue, deviceId, hist, totalDurationMs);
-
-	// Normalise and create a lookup table from the cumulative histogram.
-	vector<float> hslHist = NormaliseToLookupTableHsl(program, context, queue, sizeOfHistogram, hist, totalDurationMs);
-
-	// Backproject with the cumulative histogram.
-	vector<float> backProjection = BackprojectionHsl(program, context, queue, hslImg, hslHist, sizeOfHistogram, binSize, imageSize, totalDurationMs);
-
-	// Convert back to RGB.
-	vector<unsigned short> outputData = ConvertHslToRgb(program, context, queue, backProjection, totalDurationMs, imageSize, maxPixelValue);
-
-	cout << endl << "Total HSL Kernel Duration: " << totalDurationMs << "ms" << endl;
-
-	// Create the image from the output data.
-	CImg<unsigned short> outputImage(outputData.data(), inputImage.width(), inputImage.height(), inputImage.depth(), inputImage.spectrum());
-
-	return outputImage;
-}
 
 CImg<unsigned short> ParallelImplementation(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short> &inputImage, const unsigned int& binSize, double& totalDurationMs, const unsigned short &maxPixelValue, const unsigned char &deviceId) {
 	cout << endl << "Running parallel implementation..." << endl;
@@ -686,7 +332,7 @@ int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
 	int platform_id = 0;
 	int device_id = 0;
-	string image_filename = "E:/Dev/Parallel-Programming-Assessment/Images/test_colour_16_small.ppm";
+	string image_filename = "C:/Users/jacks/Downloads/index.ppm";
 	unsigned int binSize = 1;
 	unsigned short maxPixelValue = 65535;
 
@@ -716,6 +362,8 @@ int main(int argc, char** argv) {
 
 		// Load the kernels source.
 		AddSources(sources, "kernels/my_kernels.cl");
+		AddSources(sources, "kernels/HslKernels.cl");
+		AddSources(sources, "kernels/SharedKernels.cl");
 
 		cl::Program program(context, sources);
 
@@ -729,8 +377,6 @@ int main(int argc, char** argv) {
 			std::cout << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
 			throw err;
 		}
-
-		//CumulativeSumParallel(program, context, queue, device_id);
 		
 		double totalDurationSerial, totalDurationParallel;
 

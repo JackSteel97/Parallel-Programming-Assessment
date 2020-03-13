@@ -24,6 +24,10 @@ ostream& operator<< (ostream& out, const vector<T>& v) {
 	return out;
 }
 
+double GetProfilingTotalTimeMs(const cl::Event& evnt) {
+	return (evnt.getProfilingInfo<CL_PROFILING_COMMAND_END>() - evnt.getProfilingInfo<CL_PROFILING_COMMAND_QUEUED>()) / static_cast<double>(ProfilingResolution::PROF_MS);
+}
+
 string GetPlatformName(int platform_id) {
 	vector<cl::Platform> platforms;
 	cl::Platform::get(&platforms);
