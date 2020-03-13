@@ -22,6 +22,82 @@ double GetProfilingTotalTimeMs(const cl::Event& evnt) {
 	return (evnt.getProfilingInfo<CL_PROFILING_COMMAND_END>() - evnt.getProfilingInfo<CL_PROFILING_COMMAND_QUEUED>()) / static_cast<double>(ProfilingResolution::PROF_MS);
 }
 
+vector<float> ConvertRgbToHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short>&inputImage, double& totalDurationMs, const unsigned int &imageSize, const unsigned short &maxPixelValue) {
+	
+	const unsigned int sizeOfImage = inputImage.size() * sizeof(unsigned short);
+	const unsigned int sizeOfOutput = inputImage.size() * sizeof(float);
+	
+	
+	// Create buffers for the device.
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
+	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, sizeOfOutput);
+
+	// Copy image data to image buffer on the device and wait for it to finish before continuing.
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[0]);
+
+	// Create the kernel to use.
+	cl::Kernel conversionKernel = cl::Kernel(program, "RgbToHsl");
+	// Set kernel arguments.
+	conversionKernel.setArg(0, inputImageBuffer);
+	conversionKernel.setArg(1, outputImageBuffer);
+	conversionKernel.setArg(2, maxPixelValue);
+	conversionKernel.setArg(3, imageSize);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+	// Queue the kernel for execution on the device.
+	queue.enqueueNDRangeKernel(conversionKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
+
+	vector<float> outputData(inputImage.size());
+	// Copy the result from the device to the host.
+	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, sizeOfOutput, &outputData.data()[0]);
+
+	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
+
+	// Print out the performance values.
+	cout << "\tConvert RGB to HSL: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+
+	return outputData;
+}
+
+vector<unsigned short> ConvertHslToRgb(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const vector<float>& inputImage, double& totalDurationMs, const unsigned int &imageSize, const unsigned short maxPixelValue) {
+
+	const unsigned int sizeOfImage = inputImage.size() * sizeof(float);
+	const unsigned int sizeOfOutput = inputImage.size() * sizeof(unsigned short);
+
+	// Create buffers for the device.
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
+	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, sizeOfOutput);
+
+	// Copy image data to image buffer on the device and wait for it to finish before continuing.
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[0]);
+
+	// Create the kernel to use.
+	cl::Kernel conversionKernel = cl::Kernel(program, "HslToRgb");
+	// Set kernel arguments.
+	conversionKernel.setArg(0, inputImageBuffer);
+	conversionKernel.setArg(1, outputImageBuffer);
+	conversionKernel.setArg(2, maxPixelValue);
+	conversionKernel.setArg(3, imageSize);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+	// Queue the kernel for execution on the device.
+	queue.enqueueNDRangeKernel(conversionKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
+
+	vector<unsigned short> outputData(inputImage.size());
+	// Copy the result from the device to the host.
+	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, sizeOfOutput, &outputData.data()[0]);
+
+	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
+
+	// Print out the performance values.
+	cout << "\tConvert HSL to RGB: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+
+	return outputData;
+}
+
+
 vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::Context &context, const cl::CommandQueue queue, const unsigned int &binSize, const vector<unsigned short> &imageColourChannelData, const unsigned char &colourChannel, size_t &sizeOfHistogram, double &totalDurationMs, const unsigned short &maxPixelValue, const size_t &sizeOfImageChannel) {
 
 	// Calculate the number of bins needed.
@@ -51,6 +127,47 @@ vector<unsigned int> BuildImageHistogram(const cl::Program &program, const cl::C
 	cl::Event perfEvent;
 	// Queue the kernel for execution on the device.
 	queue.enqueueNDRangeKernel(histogramKernel, cl::NullRange, cl::NDRange(imageColourChannelData.size()), cl::NullRange, NULL, &perfEvent);
+
+	// Copy the result from the device to the host.
+	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
+
+	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
+
+	// Print out the performance values.
+	cout << "\tBuild Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+
+	return hist;
+}
+
+vector<unsigned int> BuildImageHistogramHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const unsigned int& binSize, const vector<float> &inputImage, size_t& sizeOfHistogram, double& totalDurationMs, const unsigned short& maxPixelValue, const unsigned int imageSize) {
+	// Calculate the number of bins needed.
+	const unsigned int numberOfBins = ceil(99 / binSize) + 1;
+
+	// Initialise a vector for the histogram with the appropriate bin size. Add one because this is capacity not maximum index.
+	vector<unsigned int> hist(numberOfBins);
+
+	// Calculate the size of the histogram in bytes - used for buffer allocation.
+	sizeOfHistogram = hist.size() * sizeof(unsigned int);
+	const unsigned int sizeOfImage = imageSize * sizeof(float);
+
+	// Create buffers for the device.
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
+	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
+
+	// Copy image data for the luminance channel to image buffer on the device and wait for it to finish before continuing.
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[(imageSize*2)-1]);
+
+	// Create the kernel to use.
+	cl::Kernel histogramKernel = cl::Kernel(program, "histogramAtomicHsl");
+	// Set kernel arguments.
+	histogramKernel.setArg(0, inputImageBuffer);
+	histogramKernel.setArg(1, histogramBuffer);
+	histogramKernel.setArg(2, binSize);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+	// Queue the kernel for execution on the device. Only run through one channel - the luminance channel.
+	queue.enqueueNDRangeKernel(histogramKernel, 0, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
 
 	// Copy the result from the device to the host.
 	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &hist.data()[0]);
@@ -288,6 +405,95 @@ void NormaliseToLookupTable(const cl::Program& program, const cl::Context& conte
 	cout << "\tNormalise to lookup: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 }
 
+vector<float> NormaliseToLookupTableHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram, double& totalDurationMs) {
+
+	// Create buffers for the histogram.
+	cl::Buffer histogramInputBuffer(context, CL_MEM_READ_ONLY, sizeOfHistogram);
+	cl::Buffer histogramOutputBuffer(context, CL_MEM_READ_WRITE, histogram.size() * sizeof(float));
+
+	// Get the maximum value from the histogram. Because it is cumulative, it is just the last value.
+	const unsigned int maxHistValue = histogram[histogram.size() - 1];
+
+	// Copy histogram data to device buffer memory.
+	queue.enqueueWriteBuffer(histogramInputBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
+
+	// Create the kernel.
+	cl::Kernel lutKernel = cl::Kernel(program, "normaliseToLutHsl");
+
+	// Set the kernel arguments.
+	lutKernel.setArg(0, histogramInputBuffer);
+	lutKernel.setArg(1, maxHistValue);
+	lutKernel.setArg(2, histogramOutputBuffer);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+
+	// Queue the kernel for execution on the device.
+	queue.enqueueNDRangeKernel(lutKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NullRange, NULL, &perfEvent);
+
+	vector<float> outputLut(histogram.size());
+	// Copy the result from the output buffer on the device to the host.
+	queue.enqueueReadBuffer(histogramOutputBuffer, CL_TRUE, 0, histogram.size()*sizeof(float), &outputLut.data()[0]);
+
+	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
+
+	// Print out the performance values.
+	cout << "\tNormalise to lookup: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+
+	return outputLut;
+}
+
+vector<float> BackprojectionHsl(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const vector<float>& inputImage, const vector<float>& histogram, size_t& sizeOfHistogram, const unsigned int& binSize, const unsigned int &imageSize, double& totalDurationMs) {
+
+	sizeOfHistogram = sizeof(float) * histogram.size();
+	const unsigned int sizeOfImage = imageSize * sizeof(float);
+
+	// Create buffers to store the data on the device.
+	cl::Buffer inputImageBuffer(context, CL_MEM_READ_ONLY, sizeOfImage);
+	cl::Buffer inputHistBuffer(context, CL_MEM_READ_ONLY, sizeOfHistogram);
+	cl::Buffer outputImageBuffer(context, CL_MEM_READ_WRITE, sizeOfImage);
+
+	// Write the data for the input image and histogram lookup table to the buffers.
+	queue.enqueueWriteBuffer(inputImageBuffer, CL_TRUE, 0, sizeOfImage, &inputImage.data()[(imageSize*2)-1]);
+	queue.enqueueWriteBuffer(inputHistBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
+
+	// Create the kernel
+	cl::Kernel backPropKernel = cl::Kernel(program, "backprojectionHsl");
+
+	// Set the kernel arguments.
+	backPropKernel.setArg(0, inputImageBuffer);
+	backPropKernel.setArg(1, inputHistBuffer);
+	backPropKernel.setArg(2, outputImageBuffer);
+	backPropKernel.setArg(3, binSize);
+
+	// Create  an event for performance tracking.
+	cl::Event perfEvent;
+
+	// Execute the kernel on the device.
+	queue.enqueueNDRangeKernel(backPropKernel, cl::NullRange, cl::NDRange(imageSize), cl::NullRange, NULL, &perfEvent);
+
+	// Create the vector to store the output data.
+	vector<float> outputData(imageSize);
+
+	// Copy the output from the device buffer to the output vector on the host.
+	queue.enqueueReadBuffer(outputImageBuffer, CL_TRUE, 0, sizeOfImage, &outputData.data()[0]);
+
+	// Create an output image data with the hue and saturation channels from the input.
+	vector<float>::const_iterator first = inputImage.begin();
+	vector<float>::const_iterator last = inputImage.begin() + (imageSize * 2);
+	vector<float> outputImageData(first, last);
+
+	// Append new luminance channel.
+	outputImageData.insert(outputImageData.end(), outputData.begin(), outputData.end());
+
+	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
+
+	// Print out the performance values.
+	cout << "\tBackprojection: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
+
+	return outputImageData;
+}
+
 vector<unsigned short> Backprojection(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const vector<unsigned short>& imageColourChannelData, const vector<unsigned int> &histogram, const size_t &sizeOfHistogram, const unsigned int &binSize, const unsigned char &colourChannel, double &totalDurationMs, const size_t sizeOfImageChannel) {
 
 	// Create buffers to store the data on the device.
@@ -326,6 +532,37 @@ vector<unsigned short> Backprojection(const cl::Program& program, const cl::Cont
 	cout << "\tBackprojection: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 
 	return outputData;
+}
+
+CImg<unsigned short> ParallelCorrectColours(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short>& inputImage, const unsigned int& binSize, double& totalDurationMs, const unsigned int &imageSize, const unsigned short& maxPixelValue, const unsigned char& deviceId) {
+
+	cout << endl << "Running parallel with correct colour equalisation..." << endl;
+
+	// Convert to HSL.
+	vector<float> hslImg = ConvertRgbToHsl(program, context, queue, inputImage, totalDurationMs, imageSize, maxPixelValue);
+	
+	size_t sizeOfHistogram;
+	// Build Histogram.
+	vector<unsigned int> hist = BuildImageHistogramHsl(program, context, queue, binSize, hslImg, sizeOfHistogram, totalDurationMs, maxPixelValue, imageSize);
+
+	// Cumulative sum the histogram.
+	hist = CumulativeSumParallel(program, context, queue, deviceId, hist, totalDurationMs);
+
+	// Normalise and create a lookup table from the cumulative histogram.
+	vector<float> hslHist = NormaliseToLookupTableHsl(program, context, queue, sizeOfHistogram, hist, totalDurationMs);
+
+	// Backproject with the cumulative histogram.
+	vector<float> backProjection = BackprojectionHsl(program, context, queue, hslImg, hslHist, sizeOfHistogram, binSize, imageSize, totalDurationMs);
+
+	// Convert back to RGB.
+	vector<unsigned short> outputData = ConvertHslToRgb(program, context, queue, backProjection, totalDurationMs, imageSize, maxPixelValue);
+
+	cout << endl << "Total HSL Kernel Duration: " << totalDurationMs << "ms" << endl;
+
+	// Create the image from the output data.
+	CImg<unsigned short> outputImage(outputData.data(), inputImage.width(), inputImage.height(), inputImage.depth(), inputImage.spectrum());
+
+	return outputImage;
 }
 
 CImg<unsigned short> ParallelImplementation(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short> &inputImage, const unsigned int& binSize, double& totalDurationMs, const unsigned short &maxPixelValue, const unsigned char &deviceId) {
@@ -503,8 +740,24 @@ int main(int argc, char** argv) {
 		// Display input image.
 		CImgDisplay displayInput(inputImage, "input");
 
+		// Get the size of a single channel of the image. i.e. the actual number of pixels.
+		const unsigned int imageSize = inputImage.height() * inputImage.width();
+
+		// Check if it's 8-bit or 16-bit.
+		maxPixelValue = inputImage.max();
+		if (maxPixelValue > 255) {
+			maxPixelValue = 65535;
+		}
+		else {
+			maxPixelValue = 255;
+		}
+
+		
+		//vector<unsigned short> outputRgbImg = ConvertHslToRgb(program, context, queue, hslImg, totalDurationParallel, imageSize, maxPixelValue);
+
 		CImg<unsigned short> outputImageSerial = SerialImplementation(inputImage, binSize, totalDurationSerial, maxPixelValue);
-		CImg<unsigned short> outputImageParallel = ParallelImplementation(program, context, queue, inputImage, binSize, totalDurationParallel, maxPixelValue, device_id);
+		//CImg<unsigned short> outputImageParallel = ParallelImplementation(program, context, queue, inputImage, binSize, totalDurationParallel, maxPixelValue, device_id);
+		CImg<unsigned short> outputImageParallel = ParallelCorrectColours(program, context, queue, inputImage, binSize, totalDurationParallel, imageSize, maxPixelValue, device_id);
 
 		cout << endl << "Parallel Implementation is " << static_cast<int>(totalDurationSerial / totalDurationParallel) << " times faster than the serial equivalent on this image." << endl;
 		
