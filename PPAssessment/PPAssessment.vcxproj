@@ -188,6 +188,8 @@
     <ClInclude Include="..\include\CImg.h" />
     <ClInclude Include="..\include\Utils.h" />
     <ClInclude Include="ParallelHslProcessor.h" />
+    <ClInclude Include="ParallelProcessor.h" />
+    <ClInclude Include="SerialProcessor.h" />
     <ClInclude Include="SharedParallel.h" />
   </ItemGroup>
   <ItemGroup>
@@ -205,6 +207,7 @@
     <None Include="..\Images\test_colour_16_small.ppm" />
     <None Include="HslKernels.cl" />
     <None Include="kernels\my_kernels.cl" />
+    <None Include="RgbKernels.cl" />
     <None Include="SharedKernels.cl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -217,18 +217,16 @@ private:
 	}
 
 public:
-	ParallelHslProcessor(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const CImg<unsigned short>& inputImage, const unsigned int& binSize, double& totalDurationMs, const unsigned int& imageSize, const unsigned short& maxPixelValue, const unsigned char& deviceId) {
-		Program = program;
-		Context = context;
-		Queue = queue;
-
-		InputImage = inputImage;
-		BinSize = binSize;
-		TotalDurationMs = totalDurationMs;
-		ImageSize = imageSize;
-		MaxPixelValue = maxPixelValue;
-		DeviceId = deviceId;
-	}
+	ParallelHslProcessor(cl::Program& program, cl::Context& context, cl::CommandQueue queue, CImg<unsigned short>& inputImage, unsigned int& binSize, double& totalDurationMs, unsigned int& imageSize, unsigned short& maxPixelValue, unsigned char& deviceId) :
+		Program(program),
+		Context(context),
+		Queue(queue),
+		InputImage(inputImage),
+		BinSize(binSize),
+		TotalDurationMs(totalDurationMs),
+		ImageSize(imageSize),
+		MaxPixelValue(maxPixelValue),
+		DeviceId(deviceId) {}
 
 	CImg<unsigned short> RunHistogramEqalisation() {
 		cout << endl << "Running parallel Histogram Equalisation with colour preservation..." << endl;
