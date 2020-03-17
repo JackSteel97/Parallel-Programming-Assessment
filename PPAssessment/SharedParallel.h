@@ -2,7 +2,7 @@
 
 class SharedParallel {
 public:
-	static vector<unsigned int> CumulativeSumParallel(const cl::Program& program, const cl::Context& context, const cl::CommandQueue& queue, const unsigned int deviceId, vector<unsigned int> input, double& totalDurationMs) {
+	static vector<unsigned int> CumulativeSumParallel(const cl::Program& program, const cl::Context& context, const cl::CommandQueue& queue, const int deviceId, vector<unsigned int> input, double& totalDurationMs) {
 		// Save the size and count of the input for use with the output later. We need to do this first before any padding is added to the input.
 		const size_t outputCount = input.size();
 		const size_t outputSize = outputCount * sizeof(unsigned int);

@@ -1,18 +1,3 @@
-kernel void scanHillisSteele(global uint* inputHistogram) {
-	int id = get_global_id(0);
-	int N = get_global_size(0);
-
-	for (int stride = 1; stride < N; stride *= 2) {
-		if (id >= stride)
-		{
-			inputHistogram[id] += inputHistogram[id - stride];
-		}
-
-		// Sync the step.
-		barrier(CLK_GLOBAL_MEM_FENCE);
-	}
-}
-
 kernel void scanBlelloch(global int* A) {
 	int id = get_global_id(0);
 	int N = get_global_size(0);

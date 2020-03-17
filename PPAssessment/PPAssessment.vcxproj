@@ -204,11 +204,19 @@
     <CopyFileToFolders Include="..\Images\test_colour.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
-    <None Include="..\Images\test_colour_16_small.ppm" />
-    <None Include="HslKernels.cl" />
+    <CopyFileToFolders Include="..\Images\test_colour_16_small.ppm">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="HslKernels.cl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
     <None Include="kernels\my_kernels.cl" />
-    <None Include="RgbKernels.cl" />
-    <None Include="SharedKernels.cl" />
+    <CopyFileToFolders Include="RgbKernels.cl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="SharedKernels.cl">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

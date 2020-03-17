@@ -58,8 +58,10 @@ public:
 		vector<unsigned short> outputImageData(InputImage.size());
 
 		time_point<high_resolution_clock> start, end;
-
+		double currentDuration = 0;
 		for (unsigned char colourChannel = 0; colourChannel < InputImage.spectrum(); colourChannel++) {
+			cout << "Running on colour channel " << static_cast<int>(colourChannel) << ":" << endl;
+
 			// Get this colour channel data out of the image.
 			CImg<unsigned short>::const_iterator first = InputImage.begin() + (ImageSize * colourChannel);
 			CImg<unsigned short>::const_iterator last = InputImage.begin() + (ImageSize * colourChannel) + ImageSize;
@@ -69,25 +71,33 @@ public:
 			start = high_resolution_clock::now();
 			vector<unsigned int> hist = BuildHistogram(imageColourChannelData);
 			end = high_resolution_clock::now();
-			TotalDurationMs += duration_cast<milliseconds>(end - start).count();
+			currentDuration = duration_cast<milliseconds>(end - start).count();
+			TotalDurationMs += currentDuration;
+			cout << "\tBuild histogram duration: " << currentDuration << "ms" << endl;
 
 			// Step two, cumulative sum histogram.
 			start = high_resolution_clock::now();
 			CumulativeSumHistogram(hist);
 			end = high_resolution_clock::now();
-			TotalDurationMs += duration_cast<milliseconds>(end - start).count();
+			currentDuration = duration_cast<milliseconds>(end - start).count();
+			TotalDurationMs += currentDuration;
+			cout << "\tAccumulate histogram duration: " << currentDuration << "ms" << endl;
 
 			// Step three, convert to normalised lookup table.
 			start = high_resolution_clock::now();
 			NormaliseToLut(hist);
 			end = high_resolution_clock::now();
-			TotalDurationMs += duration_cast<milliseconds>(end - start).count();
+			currentDuration = duration_cast<milliseconds>(end - start).count();
+			TotalDurationMs += currentDuration;
+			cout << "\tNormalise to Lookup table duration: " << currentDuration << "ms" << endl;
 
 			// Step four, backproject.
 			start = high_resolution_clock::now();
 			BackProject(imageColourChannelData, outputImageData, colourChannel, hist);
 			end = high_resolution_clock::now();
-			TotalDurationMs += duration_cast<milliseconds>(end - start).count();
+			currentDuration = duration_cast<milliseconds>(end - start).count();
+			TotalDurationMs += currentDuration;
+			cout << "\tBackprojection duration: " << currentDuration << "ms" << endl;
 		}
 
 		cout << endl << "Total Serial Algorithm Duration: " << TotalDurationMs << "ms" << endl;

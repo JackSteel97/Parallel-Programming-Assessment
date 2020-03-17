@@ -5,14 +5,14 @@
 #include "CImg.h"
 #include <chrono>  // for high_resolution_clock
 
-#include "ParallelHslProcessor.h";
-#include "ParallelProcessor.h";
-#include "SharedParallel.h";
-#include "SerialProcessor.h";
-
 using namespace cimg_library;
 using namespace std;
 using namespace chrono;
+
+#include "SharedParallel.h";
+#include "ParallelHslProcessor.h";
+#include "ParallelProcessor.h";
+#include "SerialProcessor.h";
 
 void print_help() {
 	cout << "Application usage:" << endl;
@@ -21,6 +21,29 @@ void print_help() {
 	cout << "  -d : select device" << endl;
 	cout << "  -l : list all platforms and devices" << endl;
 	cout << "  -h : print this message" << endl;
+}
+
+int printMenu() {
+	cout << endl << "Main Menu" << endl;
+
+	cout << "[1] Run Histogram Equalisation in Serial." << endl;
+	cout << "[2] Run Histogram Equalisation in Parallel." << endl;
+	cout << "[3] Run Histogram Equalisation in Parallel with Colour Preservation." << endl;
+
+	int selection = 0;
+	// Go until we get a valid selection.
+	do {
+		cout << "Select a numbered option: ";
+		cin >> selection;
+		if (cin.fail()) {
+			cout << endl << "Invalid entry, please enter an available number." << endl;
+			cin.clear();
+			cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+			selection = -1;
+		}
+	} while (selection < 0);
+
+	return selection;
 }
 
 
@@ -34,7 +57,7 @@ void print_help() {
 
 
 
-void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t &sizeOfHistogram, vector<unsigned int> &histogram, double &totalDurationMs) {
+void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram, double& totalDurationMs) {
 
 	// Create buffer for the histogram.
 	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
@@ -67,7 +90,7 @@ void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Conte
 	cout << "\tAccumulate Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
 }
 
-void AccumulateHistogramBlelloch(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t &sizeOfHistogram, vector<unsigned int>& histogram) {
+void AccumulateHistogramBlelloch(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram) {
 
 	// Create buffer for the histogram.
 	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
@@ -99,15 +122,15 @@ void AccumulateHistogramBlelloch(const cl::Program& program, const cl::Context& 
 
 int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
-	int platform_id = 0;
-	int device_id = 0;
-	string image_filename = "test_colour_16_small.ppm";
+	int platformId = 0;
+	int deviceId = 0;
+	string image_filename = "E:/Dev/Parallel-Programming-Assessment/Images/test_colour_16_small.ppm";
 	unsigned int binSize = 1;
 	unsigned short maxPixelValue = 65535;
 
 	for (int i = 1; i < argc; i++) {
-		if ((strcmp(argv[i], "-p") == 0) && (i < (argc - 1))) { platform_id = atoi(argv[++i]); }
-		else if ((strcmp(argv[i], "-d") == 0) && (i < (argc - 1))) { device_id = atoi(argv[++i]); }
+		if ((strcmp(argv[i], "-p") == 0) && (i < (argc - 1))) { platformId = atoi(argv[++i]); }
+		else if ((strcmp(argv[i], "-d") == 0) && (i < (argc - 1))) { deviceId = atoi(argv[++i]); }
 		else if (strcmp(argv[i], "-l") == 0) { std::cout << ListPlatformsDevices() << std::endl; }
 		else if ((strcmp(argv[i], "-f") == 0) && (i < (argc - 1))) { image_filename = argv[++i]; }
 		else if (strcmp(argv[i], "-h") == 0) { print_help(); return 0; }
@@ -116,12 +139,12 @@ int main(int argc, char** argv) {
 	cimg::exception_mode(0);
 
 	try {
-		 
+
 		// Get OpenCL context for the selected platform and device.
-		cl::Context context = GetContext(platform_id, device_id);
+		cl::Context context = GetContext(platformId, deviceId);
 
 		// Display the selected device.
-		cout << "Running on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << endl;
+		cout << "Running on " << GetPlatformName(platformId) << ", " << GetDeviceName(platformId, deviceId) << endl;
 
 		// Create a queue to which we will push commands for the device
 		cl::CommandQueue queue(context, CL_QUEUE_PROFILING_ENABLE);
@@ -130,9 +153,9 @@ int main(int argc, char** argv) {
 		cl::Program::Sources sources;
 
 		// Load the kernels source.
-		AddSources(sources, "kernels/RgbKernels.cl");
-		AddSources(sources, "kernels/HslKernels.cl");
-		AddSources(sources, "kernels/SharedKernels.cl");
+		AddSources(sources, "RgbKernels.cl");
+		AddSources(sources, "HslKernels.cl");
+		AddSources(sources, "SharedKernels.cl");
 
 		cl::Program program(context, sources);
 
@@ -146,17 +169,12 @@ int main(int argc, char** argv) {
 			std::cout << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
 			throw err;
 		}
-		
-		double totalDurationSerial, totalDurationParallel;
 
 		// Read image from file.
 		CImg<unsigned short> inputImage(image_filename.c_str());
 
-		// Display input image.
-		CImgDisplay displayInput(inputImage, "input");
-
 		// Get the size of a single channel of the image. i.e. the actual number of pixels.
-		const unsigned int imageSize = inputImage.height() * inputImage.width();
+		unsigned int imageSize = inputImage.height() * inputImage.width();
 
 		// Check if it's 8-bit or 16-bit.
 		maxPixelValue = inputImage.max();
@@ -167,23 +185,50 @@ int main(int argc, char** argv) {
 			maxPixelValue = 255;
 		}
 
-		
+		int selection = printMenu();
+
+		double totalDuration = 0;
+		CImg<unsigned short> outputImage;
+		switch (selection) {
+		case 1: {
+			SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
+			outputImage = serialProc.RunHistogramEqualisation();
+			break;
+		}
+		case 2: {
+			ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalDuration, imageSize, maxPixelValue, deviceId);
+			outputImage = parallelProc.RunHistogramEqualisation();
+			break;
+		}
+		case 3: {
+			ParallelHslProcessor parallelHslProc(program, context, queue, inputImage, binSize, totalDuration, imageSize, maxPixelValue, deviceId);
+			outputImage = parallelHslProc.RunHistogramEqalisation();
+			break;
+		}
+		default:
+			cout << "Invalid menu selection." << endl;
+			selection = printMenu();
+		};
+
+		// Display input image.
+		CImgDisplay displayInput(inputImage, "input");
+
 		//vector<unsigned short> outputRgbImg = ConvertHslToRgb(program, context, queue, hslImg, totalDurationParallel, imageSize, maxPixelValue);
 
-		CImg<unsigned short> outputImageSerial = SerialImplementation(inputImage, binSize, totalDurationSerial, maxPixelValue);
-		//CImg<unsigned short> outputImageParallel = ParallelImplementation(program, context, queue, inputImage, binSize, totalDurationParallel, maxPixelValue, device_id);
-		CImg<unsigned short> outputImageParallel = ParallelCorrectColours(program, context, queue, inputImage, binSize, totalDurationParallel, imageSize, maxPixelValue, device_id);
+		//CImg<unsigned short> outputImageSerial = SerialImplementation(inputImage, binSize, totalDurationSerial, maxPixelValue);
+		////CImg<unsigned short> outputImageParallel = ParallelImplementation(program, context, queue, inputImage, binSize, totalDurationParallel, maxPixelValue, device_id);
+		//CImg<unsigned short> outputImageParallel = ParallelCorrectColours(program, context, queue, inputImage, binSize, totalDurationParallel, imageSize, maxPixelValue, device_id);
 
-		cout << endl << "Parallel Implementation is " << static_cast<int>(totalDurationSerial / totalDurationParallel) << " times faster than the serial equivalent on this image." << endl;
-		
-		CImgDisplay displayOutputSerial(outputImageSerial, "serial_output");
-		CImgDisplay displayOutputParallel(outputImageParallel, "parallel_output");
+		//cout << endl << "Parallel Implementation is " << static_cast<int>(totalDurationSerial / totalDurationParallel) << " times faster than the serial equivalent on this image." << endl;
+		//
+		//CImgDisplay displayOutputSerial(outputImageSerial, "serial_output");
+		//CImgDisplay displayOutputParallel(outputImageParallel, "parallel_output");
 
-		while (!displayInput.is_closed() && !displayOutputSerial.is_closed() && !displayOutputParallel.is_closed()){
-			displayInput.wait(1);
-			displayOutputSerial.wait(1);
-			displayOutputParallel.wait(1);
-		}
+		//while (!displayInput.is_closed() && !displayOutputSerial.is_closed() && !displayOutputParallel.is_closed()){
+		//	displayInput.wait(1);
+		//	displayOutputSerial.wait(1);
+		//	displayOutputParallel.wait(1);
+		//}
 	}
 	catch (const cl::Error & err) {
 		std::cout << "ERROR: " << err.what() << ", " << getErrorString(err.err()) << std::endl;

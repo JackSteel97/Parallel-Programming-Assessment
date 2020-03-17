@@ -10,7 +10,7 @@ private:
 	double& TotalDurationMs;
 	unsigned int& ImageSize;
 	unsigned short& MaxPixelValue;
-	unsigned char& DeviceId;
+	int& DeviceId;
 
 	vector<unsigned int> BuildImageHistogram(const vector<unsigned short>& imageColourChannelData, const size_t& sizeOfImageChannel, const unsigned char& colourChannel, size_t& sizeOfHistogram) {
 
@@ -131,7 +131,7 @@ private:
 	}
 
 public:
-	ParallelProcessor(cl::Program& program, cl::Context& context, cl::CommandQueue queue, CImg<unsigned short>& inputImage, unsigned int& binSize, double& totalDurationMs, unsigned int& imageSize, unsigned short& maxPixelValue, unsigned char& deviceId) :
+	ParallelProcessor(cl::Program& program, cl::Context& context, cl::CommandQueue& queue, CImg<unsigned short>& inputImage, unsigned int& binSize, double& totalDurationMs, unsigned int& imageSize, unsigned short& maxPixelValue, int& deviceId) :
 		Program(program),
 		Context(context),
 		Queue(queue),

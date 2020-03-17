@@ -10,7 +10,7 @@ private:
 	double& TotalDurationMs;
 	unsigned int& ImageSize;
 	unsigned short& MaxPixelValue;
-	unsigned char& DeviceId;
+	int& DeviceId;
 
 
 	vector<float> ConvertRgbToHsl() {
@@ -217,7 +217,7 @@ private:
 	}
 
 public:
-	ParallelHslProcessor(cl::Program& program, cl::Context& context, cl::CommandQueue queue, CImg<unsigned short>& inputImage, unsigned int& binSize, double& totalDurationMs, unsigned int& imageSize, unsigned short& maxPixelValue, unsigned char& deviceId) :
+	ParallelHslProcessor(cl::Program& program, cl::Context& context, cl::CommandQueue& queue, CImg<unsigned short>& inputImage, unsigned int& binSize, double& totalDurationMs, unsigned int& imageSize, unsigned short& maxPixelValue, int& deviceId) :
 		Program(program),
 		Context(context),
 		Queue(queue),
