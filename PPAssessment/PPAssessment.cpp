@@ -47,14 +47,62 @@ int printMenu() {
 }
 
 
+CImg<unsigned short> printImageLoadMenu() {
+	cout << endl << "Image Loader" << endl;
 
+	cout << "[1] Small Greyscale (test.ppm)." << endl;
+	cout << "[2] Large Greyscale (test_large.ppm)." << endl;
+	cout << "[3] 8-Bit Colour (test_colour.ppm)." << endl;
+	cout << "[4] 16-Bit Colour (test_colour_16.ppm)." << endl;
 
+	int selection = 0;
+	// Go until we get a valid selection.
+	do {
+		cout << "Select a numbered option: ";
+		cin >> selection;
+		if (cin.fail()) {
+			cout << endl << "Invalid entry, please enter an available number." << endl;
+			cin.clear();
+			cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+			selection = -1;
+		}
+	} while (selection < 0);
 
+	string imageFilePathPrefix = "E:/Dev/Parallel-Programming-Assessment/Images/";
 
+	string imageFile = "test.ppm";
+	switch (selection) {
+	case 1:
+		imageFile = "test.ppm";
+		break;
+	case 2:
+		imageFile = "test_large.ppm";
+		break;
+	case 3:
+		imageFile = "test_colour.ppm";
+		break;
+	case 4:
+		imageFile = "test_colour_16.ppm";
+		break;
+	default:
+		cout << "Invalid Menu Selection." << endl;
+		return printImageLoadMenu();
+	}
 
+	string imageFileName = imageFilePathPrefix + imageFile;
 
+	// Read image from file.
+	CImg<unsigned short> inputImage(imageFileName.c_str());
 
+	return inputImage;
+}
 
+void waitForImageClosure(CImgDisplay& input, CImgDisplay& output) {
+	while (!input.is_closed() && !output.is_closed()) {
+		input.wait(1);
+		output.wait(1);
+	}
+}
 
 
 void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram, double& totalDurationMs) {
@@ -124,7 +172,6 @@ int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
 	int platformId = 0;
 	int deviceId = 0;
-	string image_filename = "E:/Dev/Parallel-Programming-Assessment/Images/test_colour_16_small.ppm";
 	unsigned int binSize = 1;
 	unsigned short maxPixelValue = 65535;
 
@@ -132,7 +179,7 @@ int main(int argc, char** argv) {
 		if ((strcmp(argv[i], "-p") == 0) && (i < (argc - 1))) { platformId = atoi(argv[++i]); }
 		else if ((strcmp(argv[i], "-d") == 0) && (i < (argc - 1))) { deviceId = atoi(argv[++i]); }
 		else if (strcmp(argv[i], "-l") == 0) { std::cout << ListPlatformsDevices() << std::endl; }
-		else if ((strcmp(argv[i], "-f") == 0) && (i < (argc - 1))) { image_filename = argv[++i]; }
+		//else if ((strcmp(argv[i], "-f") == 0) && (i < (argc - 1))) { image_filename = argv[++i]; }
 		else if (strcmp(argv[i], "-h") == 0) { print_help(); return 0; }
 	}
 
@@ -170,8 +217,8 @@ int main(int argc, char** argv) {
 			throw err;
 		}
 
-		// Read image from file.
-		CImg<unsigned short> inputImage(image_filename.c_str());
+		// Get an image loaded by the user's choice.
+		CImg<unsigned short> inputImage = printImageLoadMenu();
 
 		// Get the size of a single channel of the image. i.e. the actual number of pixels.
 		unsigned int imageSize = inputImage.height() * inputImage.width();
@@ -210,25 +257,30 @@ int main(int argc, char** argv) {
 			selection = printMenu();
 		};
 
-		// Display input image.
-		CImgDisplay displayInput(inputImage, "input");
 
-		//vector<unsigned short> outputRgbImg = ConvertHslToRgb(program, context, queue, hslImg, totalDurationParallel, imageSize, maxPixelValue);
+		if (maxPixelValue == 255) {
+			// 8-Bit image, convert the CImgs to use chars.
+			CImg<unsigned char> input8Bit = inputImage;
+			CImg<unsigned char> output8Bit = outputImage;
 
-		//CImg<unsigned short> outputImageSerial = SerialImplementation(inputImage, binSize, totalDurationSerial, maxPixelValue);
-		////CImg<unsigned short> outputImageParallel = ParallelImplementation(program, context, queue, inputImage, binSize, totalDurationParallel, maxPixelValue, device_id);
-		//CImg<unsigned short> outputImageParallel = ParallelCorrectColours(program, context, queue, inputImage, binSize, totalDurationParallel, imageSize, maxPixelValue, device_id);
+			// Display input image.
+			CImgDisplay displayInput(input8Bit, "input");
+			CImgDisplay displayOutput(output8Bit, "output");
+			waitForImageClosure(displayInput, displayOutput);
+		}
+		else {
+			// Just display the 16 bit ones.
+			CImgDisplay displayInput(inputImage, "input");
+			CImgDisplay displayOutput(outputImage, "output");
+			waitForImageClosure(displayInput, displayOutput);
+		}
+
+
+
 
 		//cout << endl << "Parallel Implementation is " << static_cast<int>(totalDurationSerial / totalDurationParallel) << " times faster than the serial equivalent on this image." << endl;
-		//
-		//CImgDisplay displayOutputSerial(outputImageSerial, "serial_output");
-		//CImgDisplay displayOutputParallel(outputImageParallel, "parallel_output");
 
-		//while (!displayInput.is_closed() && !displayOutputSerial.is_closed() && !displayOutputParallel.is_closed()){
-		//	displayInput.wait(1);
-		//	displayOutputSerial.wait(1);
-		//	displayOutputParallel.wait(1);
-		//}
+		//CImgDisplay displayOutputSerial(outputImageSerial, "serial_output");
 	}
 	catch (const cl::Error & err) {
 		std::cout << "ERROR: " << err.what() << ", " << getErrorString(err.err()) << std::endl;

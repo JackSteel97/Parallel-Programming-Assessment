@@ -204,7 +204,7 @@
     <CopyFileToFolders Include="..\Images\test_colour.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\Images\test_colour_16_small.ppm">
+    <CopyFileToFolders Include="..\Images\test_colour_16.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
     <CopyFileToFolders Include="HslKernels.cl">
