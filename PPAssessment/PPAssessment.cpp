@@ -58,6 +58,23 @@ CImg<unsigned short> getCustomImage() {
 	return inputImage;
 }
 
+unsigned int printBinSizeMenu(const unsigned short &maxPixelValue) {
+	unsigned int selection = 0;
+	// Go until we get a valid selection.
+	do {
+		cout << endl << "Enter a bin size to use (1-" << maxPixelValue << "): ";
+		cin >> selection;
+		if (cin.fail() || selection < 1 || selection > maxPixelValue) {
+			cout << endl << "Invalid entry, please enter an available number." << endl;
+			cin.clear();
+			cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+			selection = 0;
+		}
+	} while (selection < 1);
+
+	return selection;
+}
+
 CImg<unsigned short> printImageLoadMenu() {
 	cout << endl << "Image Loader" << endl;
 
@@ -248,6 +265,8 @@ int main(int argc, char** argv) {
 
 		int selection = printMenu();
 
+		binSize = printBinSizeMenu(maxPixelValue);
+
 		double totalDuration = 0;
 		CImg<unsigned short> outputImage;
 		switch (selection) {
@@ -269,7 +288,7 @@ int main(int argc, char** argv) {
 		case 4: {
 			double totalParallelDuration = 0;
 			SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
-			serialProc.RunHistogramEqualisation();
+			CImg<unsigned short> serialOutput = serialProc.RunHistogramEqualisation();
 
 			ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalParallelDuration, imageSize, maxPixelValue, deviceId);
 			outputImage = parallelProc.RunHistogramEqualisation();
