@@ -29,6 +29,7 @@ int printMenu() {
 	cout << "[1] Run Histogram Equalisation in Serial." << endl;
 	cout << "[2] Run Histogram Equalisation in Parallel." << endl;
 	cout << "[3] Run Histogram Equalisation in Parallel with Colour Preservation." << endl;
+	cout << "[4] Run Comparison Between Serial and Parallel Performance." << endl;
 
 	int selection = 0;
 	// Go until we get a valid selection.
@@ -46,6 +47,16 @@ int printMenu() {
 	return selection;
 }
 
+CImg<unsigned short> getCustomImage() {
+	cout << "Enter the absolute file path to the custom image: ";
+	string customFilePath;
+	cin >> customFilePath;
+
+	// Read image from file.
+	CImg<unsigned short> inputImage(customFilePath.c_str());
+
+	return inputImage;
+}
 
 CImg<unsigned short> printImageLoadMenu() {
 	cout << endl << "Image Loader" << endl;
@@ -54,6 +65,7 @@ CImg<unsigned short> printImageLoadMenu() {
 	cout << "[2] Large Greyscale (test_large.ppm)." << endl;
 	cout << "[3] 8-Bit Colour (test_colour.ppm)." << endl;
 	cout << "[4] 16-Bit Colour (test_colour_16.ppm)." << endl;
+	cout << "[5] Custom Image." << endl;
 
 	int selection = 0;
 	// Go until we get a valid selection.
@@ -84,6 +96,8 @@ CImg<unsigned short> printImageLoadMenu() {
 	case 4:
 		imageFile = "test_colour_16.ppm";
 		break;
+	case 5:
+		return getCustomImage();
 	default:
 		cout << "Invalid Menu Selection." << endl;
 		return printImageLoadMenu();
@@ -252,6 +266,21 @@ int main(int argc, char** argv) {
 			outputImage = parallelHslProc.RunHistogramEqalisation();
 			break;
 		}
+		case 4: {
+			double totalParallelDuration = 0;
+			SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
+			serialProc.RunHistogramEqualisation();
+
+			ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalParallelDuration, imageSize, maxPixelValue, deviceId);
+			outputImage = parallelProc.RunHistogramEqualisation();
+
+			cout << endl << "------------------------------------------------------------------------------------------------------" << endl;
+			cout << "\tSerial duration: " << totalDuration << "ms" << endl;
+			cout << "\tParallel duration: " << totalParallelDuration << "ms" << endl;
+			cout << "\tThe parallel implementation is " << static_cast<int>(totalDuration / totalParallelDuration) << " times faster than the serial equivalent on this image." << endl;
+			cout << "------------------------------------------------------------------------------------------------------" << endl;
+			break;
+		}
 		default:
 			cout << "Invalid menu selection." << endl;
 			selection = printMenu();
@@ -274,13 +303,6 @@ int main(int argc, char** argv) {
 			CImgDisplay displayOutput(outputImage, "output");
 			waitForImageClosure(displayInput, displayOutput);
 		}
-
-
-
-
-		//cout << endl << "Parallel Implementation is " << static_cast<int>(totalDurationSerial / totalDurationParallel) << " times faster than the serial equivalent on this image." << endl;
-
-		//CImgDisplay displayOutputSerial(outputImageSerial, "serial_output");
 	}
 	catch (const cl::Error & err) {
 		std::cout << "ERROR: " << err.what() << ", " << getErrorString(err.err()) << std::endl;
