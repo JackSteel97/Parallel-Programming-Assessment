@@ -15,7 +15,7 @@ private:
 	vector<unsigned int> BuildImageHistogram(const vector<unsigned short>& imageColourChannelData, const size_t& sizeOfImageChannel, const unsigned char& colourChannel, size_t& sizeOfHistogram) {
 
 		// Calculate the number of bins needed.
-		const unsigned int numberOfBins = ceil(MaxPixelValue / BinSize) + 1;
+		const unsigned int numberOfBins = ceil((MaxPixelValue+1) / static_cast<float>(BinSize));
 
 		// Initialise a vector for the histogram with the appropriate bin size. Add one because this is capacity not maximum index.
 		vector<unsigned int> hist(numberOfBins);

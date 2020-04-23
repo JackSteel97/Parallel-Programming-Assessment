@@ -87,7 +87,7 @@ private:
 
 	vector<unsigned int> BuildImageHistogramHsl(const vector<float>& inputImage, size_t& sizeOfHistogram) {
 		// Calculate the number of bins needed.
-		const unsigned int numberOfBins = ceil(99 / BinSize) + 1;
+		const unsigned int numberOfBins = ceil(100 / static_cast<float>(BinSize));
 
 		// Initialise a vector for the histogram with the appropriate bin size. Add one because this is capacity not maximum index.
 		vector<unsigned int> hist(numberOfBins);

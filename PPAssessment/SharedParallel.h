@@ -109,8 +109,15 @@ public:
 		// Create  an event for performance tracking.
 		cl::Event perfEventPhase3;
 
+		size_t phase3GlobalSize = inputCount - localSize;
+
+		// Correction for when number of bins is less than local size.
+		if (phase3GlobalSize <= 0) {
+			phase3GlobalSize = inputCount;
+		}
+
 		// Run the scan add kernel.
-		queue.enqueueNDRangeKernel(phase3Kernel, cl::NDRange(localSize), cl::NDRange(inputCount - localSize), cl::NDRange(localSize), NULL, &perfEventPhase3);
+		queue.enqueueNDRangeKernel(phase3Kernel, cl::NDRange(localSize), cl::NDRange(phase3GlobalSize), cl::NDRange(localSize), NULL, &perfEventPhase3);
 
 		// Create an output vector of the right size.
 		vector<unsigned int> outputData(outputCount);

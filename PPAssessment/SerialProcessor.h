@@ -9,7 +9,7 @@ private:
 	unsigned int ImageSize;
 
 	vector<unsigned int> BuildHistogram(const vector<unsigned short>& imageColourChannelData) {
-		const unsigned int numberOfBins = ceil(MaxPixelValue / BinSize) + 1;
+		const unsigned int numberOfBins = ceil((MaxPixelValue+1) / static_cast<float>(BinSize));
 
 		vector<unsigned int> hist(numberOfBins);
 

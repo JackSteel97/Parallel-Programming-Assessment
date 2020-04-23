@@ -23,6 +23,11 @@ void print_help() {
 	cout << "  -h : print this message" << endl;
 }
 
+void clearInput() {
+	cin.clear();
+	cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+}
+
 int printMenu() {
 	cout << endl << "Main Menu" << endl;
 
@@ -38,12 +43,11 @@ int printMenu() {
 		cin >> selection;
 		if (cin.fail()) {
 			cout << endl << "Invalid entry, please enter an available number." << endl;
-			cin.clear();
-			cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+			clearInput();
 			selection = -1;
 		}
 	} while (selection < 0);
-
+	
 	return selection;
 }
 
@@ -54,24 +58,23 @@ CImg<unsigned short> getCustomImage() {
 
 	// Read image from file.
 	CImg<unsigned short> inputImage(customFilePath.c_str());
-
+	
 	return inputImage;
 }
 
-unsigned int printBinSizeMenu(const unsigned short &maxPixelValue) {
+unsigned int printBinSizeMenu(const unsigned int& maxBinSize) {
 	unsigned int selection = 0;
 	// Go until we get a valid selection.
 	do {
-		cout << endl << "Enter a bin size to use (1-" << maxPixelValue << "): ";
+		cout << endl << "Enter a bin size to use (1-" << maxBinSize << "): ";
 		cin >> selection;
-		if (cin.fail() || selection < 1 || selection > maxPixelValue) {
+		if (cin.fail() || selection < 1 || selection > maxBinSize) {
 			cout << endl << "Invalid entry, please enter an available number." << endl;
-			cin.clear();
-			cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+			clearInput();
 			selection = 0;
 		}
 	} while (selection < 1);
-
+	
 	return selection;
 }
 
@@ -135,70 +138,6 @@ void waitForImageClosure(CImgDisplay& input, CImgDisplay& output) {
 	}
 }
 
-
-void AccumulateHistogramHillisSteele(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram, double& totalDurationMs) {
-
-	// Create buffer for the histogram.
-	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
-	// Hillis-Steele needs a blank copy of the input for cache purposes.
-	cl::Buffer histogramTempBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
-
-	// Copy the histogram data to the histogram buffer on the device. Wait for it to finish before continuing.
-	queue.enqueueWriteBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
-	queue.enqueueFillBuffer(histogramTempBuffer, 0, 0, sizeOfHistogram);
-	// Create the kernel for summing.
-	cl::Kernel cumulativeSumKernel = cl::Kernel(program, "scanHillisSteele");
-	// Set kernel arguments.
-	cumulativeSumKernel.setArg(0, histogramBuffer);
-	cumulativeSumKernel.setArg(1, histogramTempBuffer);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-
-	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(cumulativeSumKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NDRange(256), NULL, &perfEvent);
-
-	// Copy the result back to the host from the device.
-	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
-
-	totalDurationMs += GetProfilingTotalTimeMs(perfEvent);
-
-	auto result = std::max_element(histogram.begin(), histogram.end());
-
-	// Print out the performance values.
-	cout << "\tAccumulate Histogram: " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-}
-
-void AccumulateHistogramBlelloch(const cl::Program& program, const cl::Context& context, const cl::CommandQueue queue, const size_t& sizeOfHistogram, vector<unsigned int>& histogram) {
-
-	// Create buffer for the histogram.
-	cl::Buffer histogramBuffer(context, CL_MEM_READ_WRITE, sizeOfHistogram);
-
-	// Copy the histogram data to the histogram buffer on the device. Wait for it to finish before continuing.
-	queue.enqueueWriteBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
-
-	// Create the kernel for summing.
-	cl::Kernel cumulitiveSumKernel = cl::Kernel(program, "scanBlelloch");
-	// Set kernel arguments.
-	cumulitiveSumKernel.setArg(0, histogramBuffer);
-
-	// Create  an event for performance tracking.
-	cl::Event perfEvent;
-
-	// Queue the kernel for execution on the device.
-	queue.enqueueNDRangeKernel(cumulitiveSumKernel, cl::NullRange, cl::NDRange(histogram.size()), cl::NullRange, NULL, &perfEvent);
-
-	// Copy the result back to the host from the device.
-	queue.enqueueReadBuffer(histogramBuffer, CL_TRUE, 0, sizeOfHistogram, &histogram.data()[0]);
-
-	// Print out the performance values.
-	cout << "\tAccumulate Histogram (Blelloch): " << GetFullProfilingInfo(perfEvent, ProfilingResolution::PROF_US) << endl;
-}
-
-
-
-
-
 int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
 	int platformId = 0;
@@ -210,7 +149,6 @@ int main(int argc, char** argv) {
 		if ((strcmp(argv[i], "-p") == 0) && (i < (argc - 1))) { platformId = atoi(argv[++i]); }
 		else if ((strcmp(argv[i], "-d") == 0) && (i < (argc - 1))) { deviceId = atoi(argv[++i]); }
 		else if (strcmp(argv[i], "-l") == 0) { std::cout << ListPlatformsDevices() << std::endl; }
-		//else if ((strcmp(argv[i], "-f") == 0) && (i < (argc - 1))) { image_filename = argv[++i]; }
 		else if (strcmp(argv[i], "-h") == 0) { print_help(); return 0; }
 	}
 
@@ -248,79 +186,89 @@ int main(int argc, char** argv) {
 			throw err;
 		}
 
-		// Get an image loaded by the user's choice.
-		CImg<unsigned short> inputImage = printImageLoadMenu();
-
-		// Get the size of a single channel of the image. i.e. the actual number of pixels.
-		unsigned int imageSize = inputImage.height() * inputImage.width();
-
-		// Check if it's 8-bit or 16-bit.
-		maxPixelValue = inputImage.max();
-		if (maxPixelValue > 255) {
-			maxPixelValue = 65535;
-		}
-		else {
-			maxPixelValue = 255;
-		}
-
-		int selection = printMenu();
-
-		binSize = printBinSizeMenu(maxPixelValue);
-
-		double totalDuration = 0;
-		CImg<unsigned short> outputImage;
-		switch (selection) {
-		case 1: {
-			SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
-			outputImage = serialProc.RunHistogramEqualisation();
-			break;
-		}
-		case 2: {
-			ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalDuration, imageSize, maxPixelValue, deviceId);
-			outputImage = parallelProc.RunHistogramEqualisation();
-			break;
-		}
-		case 3: {
-			ParallelHslProcessor parallelHslProc(program, context, queue, inputImage, binSize, totalDuration, imageSize, maxPixelValue, deviceId);
-			outputImage = parallelHslProc.RunHistogramEqalisation();
-			break;
-		}
-		case 4: {
-			double totalParallelDuration = 0;
-			SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
-			CImg<unsigned short> serialOutput = serialProc.RunHistogramEqualisation();
-
-			ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalParallelDuration, imageSize, maxPixelValue, deviceId);
-			outputImage = parallelProc.RunHistogramEqualisation();
-
-			cout << endl << "------------------------------------------------------------------------------------------------------" << endl;
-			cout << "\tSerial duration: " << totalDuration << "ms" << endl;
-			cout << "\tParallel duration: " << totalParallelDuration << "ms" << endl;
-			cout << "\tThe parallel implementation is " << static_cast<int>(totalDuration / totalParallelDuration) << " times faster than the serial equivalent on this image." << endl;
-			cout << "------------------------------------------------------------------------------------------------------" << endl;
-			break;
-		}
-		default:
-			cout << "Invalid menu selection." << endl;
-			selection = printMenu();
-		};
+		while (true) {
 
 
-		if (maxPixelValue == 255) {
-			// 8-Bit image, convert the CImgs to use chars.
-			CImg<unsigned char> input8Bit = inputImage;
-			CImg<unsigned char> output8Bit = outputImage;
+			// Get an image loaded by the user's choice.
+			CImg<unsigned short> inputImage = printImageLoadMenu();
 
-			// Display input image.
-			CImgDisplay displayInput(input8Bit, "input");
-			CImgDisplay displayOutput(output8Bit, "output");
-			waitForImageClosure(displayInput, displayOutput);
-		}
-		else {
-			// Just display the 16 bit ones.
-			CImgDisplay displayInput(inputImage, "input");
-			CImgDisplay displayOutput(outputImage, "output");
-			waitForImageClosure(displayInput, displayOutput);
+			// Get the size of a single channel of the image. i.e. the actual number of pixels.
+			unsigned int imageSize = inputImage.height() * inputImage.width();
+
+			// Check if it's 8-bit or 16-bit.
+			maxPixelValue = inputImage.max();
+			if (maxPixelValue > 255) {
+				maxPixelValue = 65535;
+			}
+			else {
+				maxPixelValue = 255;
+			}
+
+			int selection = printMenu();
+
+			if (selection == 3) {
+				// Hsl processing - 100% is max HSL value.
+				binSize = printBinSizeMenu(100);
+			}
+			else {
+				binSize = printBinSizeMenu(maxPixelValue+1);
+			}
+			
+			double totalDuration = 0;
+			CImg<unsigned short> outputImage;
+			switch (selection) {
+			case 1: {
+				SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
+				outputImage = serialProc.RunHistogramEqualisation();
+				break;
+			}
+			case 2: {
+				ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalDuration, imageSize, maxPixelValue, deviceId);
+				outputImage = parallelProc.RunHistogramEqualisation();
+				break;
+			}
+			case 3: {
+				ParallelHslProcessor parallelHslProc(program, context, queue, inputImage, binSize, totalDuration, imageSize, maxPixelValue, deviceId);
+				outputImage = parallelHslProc.RunHistogramEqalisation();
+				break;
+			}
+			case 4: {
+				double totalParallelDuration = 0;
+				SerialProcessor serialProc(inputImage, binSize, totalDuration, maxPixelValue, imageSize);
+				CImg<unsigned short> serialOutput = serialProc.RunHistogramEqualisation();
+
+				ParallelProcessor parallelProc(program, context, queue, inputImage, binSize, totalParallelDuration, imageSize, maxPixelValue, deviceId);
+				outputImage = parallelProc.RunHistogramEqualisation();
+
+				cout << endl << "------------------------------------------------------------------------------------------------------" << endl;
+				cout << "\tSerial duration: " << totalDuration << "ms" << endl;
+				cout << "\tParallel duration: " << totalParallelDuration << "ms" << endl;
+				cout << "\tThe parallel implementation is " << static_cast<int>(totalDuration / totalParallelDuration) << " times faster than the serial equivalent on this image." << endl;
+				cout << "------------------------------------------------------------------------------------------------------" << endl;
+				break;
+			}
+			default:
+				cout << "Invalid menu selection." << endl;
+				selection = printMenu();
+			}
+
+			if (maxPixelValue == 255) {
+				// 8-Bit image, convert the CImgs to use chars.
+				CImg<unsigned char> input8Bit = inputImage;
+				CImg<unsigned char> output8Bit = outputImage;
+
+				// Display input image.
+				CImgDisplay displayInput(input8Bit, "input");
+				CImgDisplay displayOutput(output8Bit, "output");
+				waitForImageClosure(displayInput, displayOutput);
+			}
+			else {
+				// Just display the 16 bit ones.
+				CImgDisplay displayInput(inputImage, "input");
+				CImgDisplay displayOutput(outputImage, "output");
+				waitForImageClosure(displayInput, displayOutput);
+			}
+			clearInput();
 		}
 	}
 	catch (const cl::Error & err) {
