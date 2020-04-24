@@ -175,8 +175,12 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /s /i /y "kernels" "$(OutDir)kernels"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
+    <CopyFileToFolders>
+      <DestinationFolders>$(ProjectDir)x64\Debug;$(ProjectDir)x64\Release;%(DestinationFolders)</DestinationFolders>
+    </CopyFileToFolders>
   </ItemDefinitionGroup>
   <ItemGroup>
     <Intel_OpenCL_Build_Rules Include="my_kernels_1.cl" />
@@ -193,24 +197,24 @@
     <ClInclude Include="SharedParallel.h" />
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="..\Images\test.ppm">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-      </ExcludedFromBuild>
+    <CopyFileToFolders Include="test.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\Images\test_large.ppm">
+    <CopyFileToFolders Include="test_colour.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\Images\test_colour.ppm">
+    <CopyFileToFolders Include="test_colour_16.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\Images\test_colour_16.ppm">
+    <CopyFileToFolders Include="test_colour_8.ppm">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="test_large.ppm">
       <FileType>Document</FileType>
     </CopyFileToFolders>
     <CopyFileToFolders Include="HslKernels.cl">
       <FileType>Document</FileType>
     </CopyFileToFolders>
-    <None Include="kernels\my_kernels.cl" />
     <CopyFileToFolders Include="RgbKernels.cl">
       <FileType>Document</FileType>
     </CopyFileToFolders>

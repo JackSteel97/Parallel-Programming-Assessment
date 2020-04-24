@@ -151,7 +151,6 @@ public:
 		// Declare size of histogram (stored as number of bytes), the value is assigned by the build histogram method.
 		size_t sizeOfHistogram, sizeOfImageChannel;
 
-
 		for (unsigned char colourChannel = 0; colourChannel < InputImage.spectrum(); colourChannel++) {
 			cout << endl << "Processing Colour Channel " << (int)colourChannel << endl;
 

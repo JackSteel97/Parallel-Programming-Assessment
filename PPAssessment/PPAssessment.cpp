@@ -3,7 +3,7 @@
 
 #include "Utils.h"
 #include "CImg.h"
-#include <chrono>  // for high_resolution_clock
+#include <chrono>  // for high_resolution_clock.
 
 using namespace cimg_library;
 using namespace std;
@@ -100,7 +100,6 @@ CImg<unsigned short> printImageLoadMenu() {
 		}
 	} while (selection < 0);
 
-	string imageFilePathPrefix = "E:/Dev/Parallel-Programming-Assessment/Images/";
 
 	string imageFile = "test.ppm";
 	switch (selection) {
@@ -123,14 +122,13 @@ CImg<unsigned short> printImageLoadMenu() {
 		return printImageLoadMenu();
 	}
 
-	string imageFileName = imageFilePathPrefix + imageFile;
-
 	// Read image from file.
-	CImg<unsigned short> inputImage(imageFileName.c_str());
+	CImg<unsigned short> inputImage(imageFile.c_str());
 
 	return inputImage;
 }
 
+// Wait for the CImgDisplays to be closed.
 void waitForImageClosure(CImgDisplay& input, CImgDisplay& output) {
 	while (!input.is_closed() && !output.is_closed()) {
 		input.wait(1);
@@ -138,6 +136,39 @@ void waitForImageClosure(CImgDisplay& input, CImgDisplay& output) {
 	}
 }
 
+/*
+Report:
+
+<summary>
+	This solution has been developed to work on an AMD Ryzen based system. As such to run on your machine,
+	you will likely need to change the Additional Include Directories and the Additional Library Directories
+	in the C/C++ and Linker project property pages, to the specific locations on your machine.
+
+	Command-line arguments are not required to run this solution – all option choices are handled at runtime
+	by simple text menus. The first menu allows selection of an image on which to operate. The system supports
+	the two provided greyscale images, in addition to 8-bit and 16-bit colour images provided. You can also
+	specify an absolute file path to a custom image to load. The second menu provides a choice of an algorithm;
+	the system can perform histogram equalisation in serial, parallel, and parallel
+	with Hue Saturation Luminance (HSL) conversion – preserving colours better.
+	A comparison between serial and parallel performance can also be automatically executed. Next, you can
+	specify a custom bin size. Detailed performance metrics are reported for each algorithm.
+
+	The parallel algorithm uses a double-buffered Hillis-Steele cumulative sum to ensure optimised performance
+	for any number of bins. The code is split into classes that handle each algorithm’s implementation.
+	The colour preservation option converts the image to from RGB format to HSL for processing and then back to
+	RGB for display resulting in more accurate colours in the output (Waldman, 2013).
+	These conversions are also done in parallel using the map pattern.
+
+	The entirety of the code is heavily optimised, utilising constants, and specific data types to reduce memory
+	footprint and runtime. Notable original additions include variable bin size, colour image support,
+	16-bit image support, HSL implementation, and performance comparison.
+</summary>
+
+
+<references>
+	Waldman, N. (2013) Math behind colorspace conversions, RGB-HSL – Niwa Available from http://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/ [accessed 10 April 2020].
+</references>
+*/
 int main(int argc, char** argv) {
 	//Part 1 - handle command line options such as device selection, verbosity, etc.
 	int platformId = 0;

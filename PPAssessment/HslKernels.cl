@@ -84,13 +84,10 @@ kernel void RgbToHsl(global const ushort* inputImage, global float* outputImage,
 		}
 	}
 
-
-
 	// Convert to percentage with one decimal place.
-	//s = (round(s * 10) / 10)*100;
-	//l = (round(l * 10) / 10)*100;
 	s = s * 100;
 	l = l * 100;
+
 	// Set in corresponding channels out output.
 	outputImage[id] = h;
 	outputImage[id + imageSize] = s;
