@@ -154,7 +154,8 @@ Report:
 	specify a custom bin size. Detailed performance metrics are reported for each algorithm.
 
 	The parallel algorithm uses a double-buffered Hillis-Steele cumulative sum to ensure optimised performance
-	for any number of bins. The code is split into classes that handle each algorithm’s implementation.
+	for any number of bins. This cumulative sum utilises on-device buffers to reduce copy operations between host and device.
+	The code is split into classes that handle each algorithm’s implementation.
 	The colour preservation option converts the image to from RGB format to HSL for processing and then back to
 	RGB for display resulting in more accurate colours in the output (Waldman, 2013).
 	These conversions are also done in parallel using the map pattern.
@@ -163,7 +164,6 @@ Report:
 	footprint and runtime. Notable original additions include variable bin size, colour image support,
 	16-bit image support, HSL implementation, and performance comparison.
 </summary>
-
 
 <references>
 	Waldman, N. (2013) Math behind colorspace conversions, RGB-HSL – Niwa Available from http://www.niwa.nu/2013/05/math-behind-colorspace-conversions-rgb-hsl/ [accessed 10 April 2020].
